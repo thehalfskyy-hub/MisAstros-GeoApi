@@ -1,13 +1,19 @@
 // api/chart.js
 // --- Configuración CORS ---
-const ALLOWED_ORIGIN = "https://misastros.com/"; // Para test. Luego cambialo por tu dominio: "https://misastros.com"
-
-function setCors(res) {
-  res.setHeader("Access-Control-Allow-Origin", ALLOWED_ORIGIN);
+const ALLOWED_ORIGINS = [
+  "misastros.com",
+  "www.misastros.com",
+  "jauxxx-v4.myshopify.com",
+  "https://misastros.com/",
+];
+function setCors(res, req) {
+  const origin = req.headers.origin || "";
+  const allow = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+  res.setHeader("Access-Control-Allow-Origin", allow);
+  res.setHeader("Vary", "Origin");                // importante para caches
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
 }
-
 async function readJsonBody(req) {
   return await new Promise((resolve, reject) => {
     try {
