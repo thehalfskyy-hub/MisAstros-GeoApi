@@ -1,18 +1,20 @@
-// api/chart.js  — Vercel Serverless (CommonJS)
+// api/chart.js — Vercel Serverless (CommonJS) — Compatible con PLAN STARTER
 
 // ====== C O N F I G ======
 const ALLOWED_ORIGINS = new Set([
   "https://misastros.com",
   "https://www.misastros.com",
   "https://jauxxx-v4.myshopify.com",
+  // helpers de desarrollo (podés quitar luego)
   "http://localhost:3000",
   "http://localhost:5173",
 ]);
 
 const ASTRO_BASE = "https://json.astrologyapi.com/v1";
-const EP_WESTERN_CHART = `${ASTRO_BASE}/western_chart_svg`;
-const EP_PLANETS       = `${ASTRO_BASE}/planets`;
-const EP_ASCENDANT     = `${ASTRO_BASE}/ascendant`;
+// Endpoints DISPONIBLES en tu plan Starter:
+const EP_WESTERN_CHART = `${ASTRO_BASE}/natal_wheel_chart`;   // gráfico (SVG/PNG) ✅
+const EP_PLANETS       = `${ASTRO_BASE}/planets/tropical`;     // posiciones (Sol/Luna) ✅
+const EP_HOUSES        = `${ASTRO_BASE}/house_cusps/tropical`; // casas→ casa 1 = Ascendente (estimado) ✅
 
 // ====== H E L P E R S ======
 function setCors(res, origin) {
@@ -30,7 +32,7 @@ function setCors(res, origin) {
 function bad(res, status, msg, detail) {
   res.statusCode = status;
   res.setHeader("Content-Type", "application/json; charset=utf-8");
-  res.end(JSON.stringify({ error: msg, detail: detail || null }));
+  res.end(JSON.stringify({ error: msg, detail: detail ?? null }));
 }
 
 async function ocGeocode(place) {
@@ -52,7 +54,8 @@ async function ocGeocode(place) {
 }
 
 async function googleTimeZone(lat, lon) {
-  const key = process.env.GOOGLE_API_KEY; // si no la tenés, cae al fallback
+  // acepta GOOGLE_API_KEY o GOOGLE_TZ_KEY
+  const key = process.env.GOOGLE_API_KEY || process.env.GOOGLE_TZ_KEY;
   if (!key) return { tzHours: 0, source: "fallback" };
 
   const ts = Math.floor(Date.now() / 1000);
@@ -86,11 +89,13 @@ async function astroCall(endpoint, payload) {
   let j;
   try {
     j = JSON.parse(text);
-  } catch (e) {
+  } catch {
     throw new Error(`AstrologyAPI parse error: ${text.slice(0, 200)}`);
   }
+
   if (!r.ok) {
-    const msg = j.message || j.error || `AstrologyAPI ${r.status}`;
+    // mensaje claro para planes sin acceso
+    const msg = j.msg || j.message || j.error || `AstrologyAPI ${r.status}`;
     const detail = j || null;
     const err = new Error(msg);
     err.detail = detail;
@@ -100,6 +105,7 @@ async function astroCall(endpoint, payload) {
 }
 
 function normalizeChartUrl(resp) {
+  // distintos planes → distintos campos
   return resp.chart_url || resp.chartUrl || resp.svg_url || resp.svgUrl || null;
 }
 
@@ -117,30 +123,40 @@ module.exports = async (req, res) => {
       return bad(res, 405, "Method Not Allowed. Use POST.");
     }
 
+    // Parseo body
     let body = {};
-    try { body = typeof req.body === "string" ? JSON.parse(req.body) : req.body; } catch (_) {}
-    const { date, time, place } = body || {};
+    try {
+      body = typeof req.body === "string" ? JSON.parse(req.body) : (req.body || {});
+    } catch {}
+    const { date, time, place } = body;
     if (!date || !time || !place) {
       return bad(res, 400, "Faltan parámetros", { need: ["date", "time", "place"] });
     }
 
+    // 1) Geocodificación
     const { lat, lon } = await ocGeocode(place);
+
+    // 2) Zona horaria (horas). Si falla o no hay key, usamos 0 (UTC)
     const tz = await googleTimeZone(lat, lon).catch(() => ({ tzHours: 0, source: "fallback" }));
     const timezone = tz.tzHours;
 
+    // Payload común para AstrologyAPI
+    const [Y, M, D] = date.split("-").map(s => parseInt(s, 10));
+    const [HH, mm] = time.split(":").map(s => parseInt(s || "0", 10));
+
     const astroBase = {
-      day:   parseInt(date.split("-")[2], 10),
-      month: parseInt(date.split("-")[1], 10),
-      year:  parseInt(date.split("-")[0], 10),
-      hour:  parseInt((time.split(":")[0] || "0"), 10),
-      min:   parseInt((time.split(":")[1] || "0"), 10),
-      lat, lon, tzone: timezone,
+      day: D, month: M, year: Y,
+      hour: HH, min: mm,
+      lat, lon,
+      tzone: timezone,
     };
 
-    const chartResp   = await astroCall(EP_WESTERN_CHART, astroBase);
-    const chartUrl    = normalizeChartUrl(chartResp);
-    const planetsResp = await astroCall(EP_PLANETS, astroBase);
+    // 3) Gráfico (SVG/PNG) — natal_wheel_chart (Starter)
+    const chartResp = await astroCall(EP_WESTERN_CHART, astroBase);
+    const chartUrl = normalizeChartUrl(chartResp);
 
+    // 4) Sol y Luna — planets/tropical
+    const planetsResp = await astroCall(EP_PLANETS, astroBase);
     const sunObj  = (planetsResp || []).find(p => /sun/i.test(p.name || ""));
     const moonObj = (planetsResp || []).find(p => /moon/i.test(p.name || ""));
 
@@ -152,16 +168,23 @@ module.exports = async (req, res) => {
       ? { sign: moonObj.sign || moonObj.sign_name || moonObj.signName || "", text: moonObj.full_degree ? `Grados: ${moonObj.full_degree}` : "" }
       : { sign: "", text: "" };
 
-    const ascResp = await astroCall(EP_ASCENDANT, astroBase);
+    // 5) Ascendente (estimado) — casa 1 de house_cusps/tropical
+    const houses = await astroCall(EP_HOUSES, astroBase).catch(() => null);
+    const house1 = houses && (houses.houses || houses).find(h => String(h.house) === "1");
     const asc = {
-      sign: ascResp.ascendant || ascResp.sign || ascResp.sign_name || "",
-      text: ascResp.naksahtra || ascResp.nakshatra || "",
+      sign: (house1 && (house1.sign_name || house1.sign || house1.signName)) || "",
+      text: house1 && house1.degree ? `Grados: ${house1.degree}` : "",
+      source: houses ? "house_cusps/tropical" : "n/a",
     };
 
+    // 6) Respuesta
     res.statusCode = 200;
     res.setHeader("Content-Type", "application/json; charset=utf-8");
     res.end(JSON.stringify({
-      chartUrl, sun, moon, asc,
+      chartUrl,
+      sun,
+      moon,
+      asc,
       meta: { lat, lon, timezone, tzSource: tz.source || "unknown" },
     }, null, 2));
   } catch (err) {
