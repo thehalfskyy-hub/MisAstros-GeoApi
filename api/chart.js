@@ -1,5 +1,6 @@
 // api/chart.js
-const ALLOWED_ORIGIN = "*"; // Para test. Luego cambiá a tu dominio (ej: https://misastros.com)
+// --- Configuración CORS ---
+const ALLOWED_ORIGIN = "*"; // Para test. Luego cambialo por tu dominio: "https://misastros.com"
 
 function setCors(res) {
   res.setHeader("Access-Control-Allow-Origin", ALLOWED_ORIGIN);
@@ -8,14 +9,13 @@ function setCors(res) {
 }
 
 async function readJsonBody(req) {
-  // Vercel Node serverless no parsea el body por defecto en "Other"
   return await new Promise((resolve, reject) => {
     try {
       let data = "";
       req.on("data", chunk => { data += chunk; });
       req.on("end", () => {
         try { resolve(data ? JSON.parse(data) : {}); }
-        catch (e) { reject(new Error("JSON inválido en body")); }
+        catch { reject(new Error("JSON inválido en body")); }
       });
     } catch (e) { reject(e); }
   });
@@ -24,50 +24,63 @@ async function readJsonBody(req) {
 export default async function handler(req, res) {
   setCors(res);
 
-  // 1) Preflight CORS
-  if (req.method === "OPTIONS") {
-    return res.status(204).end();
-  }
+  // Preflight CORS
+  if (req.method === "OPTIONS") return res.status(204).end();
 
-  // 2) Solo POST
+  // Solo POST
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method Not Allowed. Usa POST." });
   }
 
   try {
-    // ----- BODY -----
+    // ===== 0) Body =====
     const { date, time, place } = await readJsonBody(req);
     if (!date || !time || !place) {
       return res.status(400).json({ error: "Faltan campos: date, time, place" });
     }
 
-    // ----- 1) Geocoding (OpenCage) -----
+    // ===== 1) Geocoding (OpenCage) =====
+    if (!process.env.OPENCAGE_KEY) {
+      return res.status(500).json({ error: "Falta OPENCAGE_KEY en variables de entorno" });
+    }
+
     const ocResp = await fetch(
       `https://api.opencagedata.com/geocode/v1/json?q=${encodeURIComponent(place)}&key=${process.env.OPENCAGE_KEY}`
     );
     const geo = await ocResp.json();
-    if (!geo.results?.length) return res.status(400).json({ error: "Lugar no encontrado" });
-    const { lat, lng } = geo.results[0].geometry;
 
-    // ----- 2) Timezone (Google Time Zone API) -----
-    const tsLocal = Math.floor(new Date(`${date}T${time}:00`).getTime() / 1000);
-    const tzResp = await fetch(
-      `https://maps.googleapis.com/maps/api/timezone/json?location=${lat},${lng}&timestamp=${tsLocal}&key=${process.env.GOOGLE_TZ_KEY}`
-    );
-    const tzj = await tzResp.json();
-    if (tzj.status !== "OK") return res.status(500).json({ error: "Error en Google Time Zone", detail: tzj });
-    const totalOffset = (tzj.rawOffset + tzj.dstOffset) / 3600;
+    if (!ocResp.ok) {
+      return res.status(502).json({ error: "OpenCage error", detail: geo });
+    }
+    if (!geo.results?.length) {
+      return res.status(400).json({ error: "Lugar no encontrado" });
+    }
 
-    // ----- 3) Datos base -----
-    const [Y, M, D] = date.split('-').map(Number);
-    const [HH, mm] = time.split(':').map(Number);
+    const best = geo.results[0];
+    const { lat, lng } = best.geometry || {};
+    const tzAnn = best?.annotations?.timezone;
 
-    // ----- 4) AstrologyAPI Auth (pone tus credenciales) -----
+    if (typeof lat !== "number" || typeof lng !== "number") {
+      return res.status(500).json({ error: "OpenCage no devolvió coordenadas" });
+    }
+    if (!tzAnn) {
+      return res.status(500).json({ error: "No se pudo determinar la zona horaria desde OpenCage" });
+    }
+
+    // OpenCage da offset en segundos (offset_sec); fallback a offset
+    const totalOffset = (tzAnn.offset_sec ?? tzAnn.offset ?? 0) / 3600;
+
+    // ===== 2) Datos base =====
+    const [Y, M, D] = date.split("-").map(Number);
+    const [HH, mm]  = time.split(":").map(Number);
+
+    // ===== 3) AstrologyAPI Auth =====
+    // ⚠️ REEMPLAZÁ ESTOS VALORES POR LOS TUYOS (o pasalos a env vars)
     const USER_ID = "646592"; // <--- TU USER ID
     const API_KEY = "bb8107343c440e0307f2374f70f45550ae1f36f8"; // <--- TU API KEY
     const baseAuth = "Basic " + Buffer.from(`${USER_ID}:${API_KEY}`).toString("base64");
 
-    // ----- 5) Payload común -----
+    // ===== 4) Payload común =====
     const payload = {
       year: Y, month: M, day: D,
       hour: HH, min: mm,
@@ -75,35 +88,40 @@ export default async function handler(req, res) {
       tzone: totalOffset,
       chart_size: 900,
       image_type: "svg",
+      // 🎨 Colores editables
       inner_circle_background: "#F9FAFB",
       sign_background: "#FFFFFF",
       sign_icon_color: "#0F172A",
       planet_icon_color: "#111827"
     };
 
-    // ----- 6) Rueda -----
+    // ===== 5) Rueda =====
     const chartRes = await fetch("https://json.astrologyapi.com/v1/natal_wheel_chart", {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": baseAuth },
       body: JSON.stringify(payload)
     });
     const chartData = await chartRes.json();
-    if (!chartRes.ok) return res.status(502).json({ error: "AstrologyAPI chart error", detail: chartData });
+    if (!chartRes.ok) {
+      return res.status(502).json({ error: "AstrologyAPI chart error", detail: chartData });
+    }
 
-    // ----- 7) Planetas/Houses -----
-    const planetsRes = await fetch("https://json.astrologyapi.com/v1/western_horoscope", {
+    // ===== 6) Planetas / Casas =====
+    const positionsRes = await fetch("https://json.astrologyapi.com/v1/western_horoscope", {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": baseAuth },
       body: JSON.stringify(payload)
     });
-    const planetsData = await planetsRes.json();
-    if (!planetsRes.ok) return res.status(502).json({ error: "AstrologyAPI positions error", detail: planetsData });
+    const positions = await positionsRes.json();
+    if (!positionsRes.ok) {
+      return res.status(502).json({ error: "AstrologyAPI positions error", detail: positions });
+    }
 
-    const sunSign  = planetsData?.planets?.find(p => p.name === "Sun")?.sign;
-    const moonSign = planetsData?.planets?.find(p => p.name === "Moon")?.sign;
-    const ascSign  = planetsData?.houses?.find(h => h.house === 1)?.sign;
+    const sunSign  = positions?.planets?.find(p => p.name === "Sun")?.sign;
+    const moonSign = positions?.planets?.find(p => p.name === "Moon")?.sign;
+    const ascSign  = positions?.houses?.find(h => h.house === 1)?.sign;
 
-    // ----- 8) Reports cortos -----
+    // ===== 7) Mini reportes =====
     const [sunReport, moonReport, ascReport] = await Promise.all([
       fetch("https://json.astrologyapi.com/v1/general_rashi_report/sun", {
         method: "POST",
