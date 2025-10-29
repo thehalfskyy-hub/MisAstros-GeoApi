@@ -1,22 +1,18 @@
 // api/chart.js  — Vercel Serverless (CommonJS)
 
-const fetch = require("node-fetch");
-
 // ====== C O N F I G ======
 const ALLOWED_ORIGINS = new Set([
   "https://misastros.com",
   "https://www.misastros.com",
-  "https://jauxxx-v4.myshopify.com", // tu dominio Shopify
+  "https://jauxxx-v4.myshopify.com",
   "http://localhost:3000",
   "http://localhost:5173",
 ]);
 
 const ASTRO_BASE = "https://json.astrologyapi.com/v1";
-
-// Endpoints usados (AstrologyAPI v1)
 const EP_WESTERN_CHART = `${ASTRO_BASE}/western_chart_svg`;
-const EP_PLANETS = `${ASTRO_BASE}/planets`;
-const EP_ASCENDANT = `${ASTRO_BASE}/ascendant`;
+const EP_PLANETS       = `${ASTRO_BASE}/planets`;
+const EP_ASCENDANT     = `${ASTRO_BASE}/ascendant`;
 
 // ====== H E L P E R S ======
 function setCors(res, origin) {
@@ -41,9 +37,10 @@ async function ocGeocode(place) {
   const key = process.env.OPENCAGE_KEY;
   if (!key) throw new Error("Falta OPENCAGE_KEY");
 
-  const url = `https://api.opencagedata.com/geocode/v1/json?q=${encodeURIComponent(
-    place
-  )}&key=${key}&limit=1&language=es&no_annotations=0`;
+  const url =
+    "https://api.opencagedata.com/geocode/v1/json?q=" +
+    encodeURIComponent(place) +
+    `&key=${key}&limit=1&language=es&no_annotations=0`;
 
   const r = await fetch(url);
   if (!r.ok) throw new Error(`OpenCage ${r.status}`);
@@ -55,8 +52,7 @@ async function ocGeocode(place) {
 }
 
 async function googleTimeZone(lat, lon) {
-  // ✅ lee GOOGLE_API_KEY o GOOGLE_TZ_KEY (cualquiera de las dos)
-  const key = process.env.GOOGLE_API_KEY || process.env.GOOGLE_TZ_KEY;
+  const key = process.env.GOOGLE_API_KEY; // si no la tenés, cae al fallback
   if (!key) return { tzHours: 0, source: "fallback" };
 
   const ts = Math.floor(Date.now() / 1000);
@@ -90,26 +86,21 @@ async function astroCall(endpoint, payload) {
   let j;
   try {
     j = JSON.parse(text);
-  } catch {
+  } catch (e) {
     throw new Error(`AstrologyAPI parse error: ${text.slice(0, 200)}`);
   }
   if (!r.ok) {
     const msg = j.message || j.error || `AstrologyAPI ${r.status}`;
+    const detail = j || null;
     const err = new Error(msg);
-    err.detail = j;
+    err.detail = detail;
     throw err;
   }
   return j;
 }
 
 function normalizeChartUrl(resp) {
-  return (
-    resp.chart_url ||
-    resp.chartUrl ||
-    resp.svg_url ||
-    resp.svgUrl ||
-    null
-  );
+  return resp.chart_url || resp.chartUrl || resp.svg_url || resp.svgUrl || null;
 }
 
 // ====== H A N D L E R ======
@@ -122,96 +113,57 @@ module.exports = async (req, res) => {
       res.statusCode = 204;
       return res.end();
     }
-
     if (req.method !== "POST") {
       return bad(res, 405, "Method Not Allowed. Use POST.");
     }
 
     let body = {};
-    try {
-      body = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
-    } catch {}
+    try { body = typeof req.body === "string" ? JSON.parse(req.body) : req.body; } catch (_) {}
     const { date, time, place } = body || {};
     if (!date || !time || !place) {
-      return bad(res, 400, "Faltan parámetros", {
-        need: ["date", "time", "place"],
-      });
+      return bad(res, 400, "Faltan parámetros", { need: ["date", "time", "place"] });
     }
 
-    // 1) Geocodificación
     const { lat, lon } = await ocGeocode(place);
-
-    // 2) Zona horaria
-    const tz = await googleTimeZone(lat, lon).catch(() => ({
-      tzHours: 0,
-      source: "fallback",
-    }));
+    const tz = await googleTimeZone(lat, lon).catch(() => ({ tzHours: 0, source: "fallback" }));
     const timezone = tz.tzHours;
 
-    // 3) Payload base
     const astroBase = {
-      day: parseInt(date.split("-")[2], 10),
+      day:   parseInt(date.split("-")[2], 10),
       month: parseInt(date.split("-")[1], 10),
-      year: parseInt(date.split("-")[0], 10),
-      hour: parseInt(time.split(":")[0] || "0", 10),
-      min: parseInt(time.split(":")[1] || "0", 10),
-      lat,
-      lon,
-      tzone: timezone,
+      year:  parseInt(date.split("-")[0], 10),
+      hour:  parseInt((time.split(":")[0] || "0"), 10),
+      min:   parseInt((time.split(":")[1] || "0"), 10),
+      lat, lon, tzone: timezone,
     };
 
-    // 4) Rueda
-    const chartResp = await astroCall(EP_WESTERN_CHART, astroBase);
-    const chartUrl = normalizeChartUrl(chartResp);
-
-    // 5) Planetas (Sol y Luna)
+    const chartResp   = await astroCall(EP_WESTERN_CHART, astroBase);
+    const chartUrl    = normalizeChartUrl(chartResp);
     const planetsResp = await astroCall(EP_PLANETS, astroBase);
-    const sunObj = planetsResp.find((p) => /sun/i.test(p.name || ""));
-    const moonObj = planetsResp.find((p) => /moon/i.test(p.name || ""));
+
+    const sunObj  = (planetsResp || []).find(p => /sun/i.test(p.name || ""));
+    const moonObj = (planetsResp || []).find(p => /moon/i.test(p.name || ""));
 
     const sun = sunObj
-      ? {
-          sign:
-            sunObj.sign || sunObj.sign_name || sunObj.signName || "",
-          text: sunObj.full_degree
-            ? `Grados: ${sunObj.full_degree}`
-            : "",
-        }
+      ? { sign: sunObj.sign || sunObj.sign_name || sunObj.signName || "", text: sunObj.full_degree ? `Grados: ${sunObj.full_degree}` : "" }
       : { sign: "", text: "" };
 
     const moon = moonObj
-      ? {
-          sign:
-            moonObj.sign || moonObj.sign_name || moonObj.signName || "",
-          text: moonObj.full_degree
-            ? `Grados: ${moonObj.full_degree}`
-            : "",
-        }
+      ? { sign: moonObj.sign || moonObj.sign_name || moonObj.signName || "", text: moonObj.full_degree ? `Grados: ${moonObj.full_degree}` : "" }
       : { sign: "", text: "" };
 
-    // 6) Ascendente
     const ascResp = await astroCall(EP_ASCENDANT, astroBase);
     const asc = {
       sign: ascResp.ascendant || ascResp.sign || ascResp.sign_name || "",
       text: ascResp.naksahtra || ascResp.nakshatra || "",
     };
 
-    // ✅ Respuesta final
     res.statusCode = 200;
     res.setHeader("Content-Type", "application/json; charset=utf-8");
-    return res.end(
-      JSON.stringify(
-        {
-          chartUrl,
-          sun,
-          moon,
-          asc,
-          meta: { lat, lon, timezone, tzSource: tz.source || "unknown" },
-        },
-        null,
-        2
-      )
-    );
+    res.end(JSON.stringify({
+      chartUrl, sun, moon, asc,
+      meta: { lat, lon, timezone, tzSource: tz.source || "unknown" },
+    }, null, 2));
   } catch (err) {
     return bad(res, 500, "Error interno del servidor", err.detail || err.message);
   }
