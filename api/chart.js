@@ -1,6 +1,6 @@
 // api/chart.js
 // --- Configuración CORS ---
-const ALLOWED_ORIGIN = "*"; // Para test. Luego cambialo por tu dominio: "https://misastros.com"
+const ALLOWED_ORIGIN = "https://misastros.com/"; // Para test. Luego cambialo por tu dominio: "https://misastros.com"
 
 function setCors(res) {
   res.setHeader("Access-Control-Allow-Origin", ALLOWED_ORIGIN);
