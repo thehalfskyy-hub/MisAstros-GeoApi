@@ -13,8 +13,8 @@ const ALLOWED_ORIGINS = new Set([
 const ASTRO_BASE = "https://json.astrologyapi.com/v1";
 // Endpoints DISPONIBLES en tu plan Starter:
 const EP_WESTERN_CHART = `${ASTRO_BASE}/natal_wheel_chart`;   // gráfico (SVG/PNG) ✅
-const EP_PLANETS       = `${ASTRO_BASE}/planets/tropical`;     // posiciones (Sol/Luna) ✅
-const EP_HOUSES        = `${ASTRO_BASE}/house_cusps/tropical`; // casas→ casa 1 = Ascendente (estimado) ✅
+const EP_PLANETS       = `${ASTRO_BASE}/planets/tropical`;     // posiciones (Sol/Luna…) ✅
+const EP_HOUSES        = `${ASTRO_BASE}/house_cusps/tropical`; // casas → casa 1 = Ascendente (estimado) ✅
 
 // ====== H E L P E R S ======
 function setCors(res, origin) {
@@ -109,6 +109,34 @@ function normalizeChartUrl(resp) {
   return resp.chart_url || resp.chartUrl || resp.svg_url || resp.svgUrl || null;
 }
 
+// ====== Texto ES para planets/signos + formato grados (NUEVO para positions) ======
+const NOMBRE_ES = {
+  sun: "Sol",
+  moon: "Luna",
+  mercury: "Mercurio",
+  venus: "Venus",
+  mars: "Marte",
+  jupiter: "Júpiter",
+  saturn: "Saturno",
+  uranus: "Urano",
+  neptune: "Neptuno",
+  pluto: "Plutón",
+};
+
+const SIGNO_ES = {
+  aries:"Aries", taurus:"Tauro", gemini:"Géminis", cancer:"Cáncer",
+  leo:"Leo", virgo:"Virgo", libra:"Libra", scorpio:"Escorpio",
+  sagittarius:"Sagitario", capricorn:"Capricornio", aquarius:"Acuario", pisces:"Piscis",
+};
+
+function toDegMin(fullDegree) {
+  const v = Number(fullDegree);
+  if (!isFinite(v)) return "";
+  const deg = Math.floor(v);
+  const min = Math.round((v - deg) * 60);
+  return `${deg}° ${min}'`;
+}
+
 // ====== H A N D L E R ======
 module.exports = async (req, res) => {
   try {
@@ -155,8 +183,9 @@ module.exports = async (req, res) => {
     const chartResp = await astroCall(EP_WESTERN_CHART, astroBase);
     const chartUrl = normalizeChartUrl(chartResp);
 
-    // 4) Sol y Luna — planets/tropical
+    // 4) Planetas — planets/tropical (trae Sol, Luna y resto)
     const planetsResp = await astroCall(EP_PLANETS, astroBase);
+
     const sunObj  = (planetsResp || []).find(p => /sun/i.test(p.name || ""));
     const moonObj = (planetsResp || []).find(p => /moon/i.test(p.name || ""));
 
@@ -177,7 +206,32 @@ module.exports = async (req, res) => {
       source: houses ? "house_cusps/tropical" : "n/a",
     };
 
-    // 6) Respuesta
+    // 6) NUEVO: construir listado "positions" (tipo Sun/Moon/etc.)
+    const positions = (Array.isArray(planetsResp) ? planetsResp : [])
+      .filter(p => p && p.name)
+      .map(p => {
+        const key = String(p.name || "").toLowerCase();       // "sun","moon","mercury",…
+        const name = NOMBRE_ES[key] || p.name;                 // "Sol","Luna",…
+        const signKey = String(p.sign || p.sign_name || "").toLowerCase();
+        const sign = SIGNO_ES[signKey] || (p.sign || p.sign_name || "");
+        const retro = !!(p.retro || p.is_retro || p.is_retrograde);
+        const degMin = p.full_degree != null ? toDegMin(p.full_degree) : "";
+        return { key, name, sign, degMin, retro };
+      });
+
+    // sumar Ascendente como item si lo tenemos
+    if (asc.sign) {
+      const ascSignKey = String(asc.sign).toLowerCase();
+      positions.push({
+        key: "asc",
+        name: "Ascendente",
+        sign: SIGNO_ES[ascSignKey] || asc.sign,
+        degMin: house1 && house1.degree != null ? toDegMin(house1.degree) : "",
+        retro: false
+      });
+    }
+
+    // 7) Respuesta
     res.statusCode = 200;
     res.setHeader("Content-Type", "application/json; charset=utf-8");
     res.end(JSON.stringify({
@@ -185,6 +239,7 @@ module.exports = async (req, res) => {
       sun,
       moon,
       asc,
+      positions, // <--- NUEVO
       meta: { lat, lon, timezone, tzSource: tz.source || "unknown" },
     }, null, 2));
   } catch (err) {
