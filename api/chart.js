@@ -205,13 +205,15 @@ module.exports = async (req, res) => {
     };
 
     // 3) Gráfico (SVG/PNG) — natal_wheel_chart (Starter)
-    let chartResp;
+    // ----- FALLO SUAVE: si falla el gráfico, seguimos con posiciones y devolvemos errors.chart -----
+    let chartUrl = null;
+    let chartError = null;
     try {
-      chartResp = await astroCall(EP_WESTERN_CHART, astroBase);
+      const chartResp = await astroCall(EP_WESTERN_CHART, astroBase);
+      chartUrl = normalizeChartUrl(chartResp);
     } catch (e) {
-      return bad(res, e.status || 502, "Error al pedir el gráfico a AstrologyAPI.", detailFromError(e));
+      chartError = detailFromError(e) || "Fallo al pedir el gráfico a AstrologyAPI";
     }
-    const chartUrl = normalizeChartUrl(chartResp);
 
     // 4) Planetas — planets/tropical (trae Sol, Luna y resto)
     let planetsResp;
@@ -270,7 +272,7 @@ module.exports = async (req, res) => {
       });
     }
 
-    // 7) Respuesta OK
+    // 7) Respuesta OK (con errors.chart si el gráfico falló)
     res.statusCode = 200;
     res.setHeader("Content-Type", "application/json; charset=utf-8");
     res.end(JSON.stringify({
@@ -279,6 +281,7 @@ module.exports = async (req, res) => {
       moon,
       asc,
       positions,
+      errors: { chart: chartError },          // <--- agregado
       meta: { lat, lon, timezone, tzSource },
     }, null, 2));
   } catch (err) {
