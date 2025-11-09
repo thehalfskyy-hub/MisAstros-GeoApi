@@ -35,9 +35,16 @@ function bad(res, status, msg, detail) {
   res.end(JSON.stringify({ error: msg, detail: detail ?? null }));
 }
 
+function detailFromError(err) {
+  if (!err) return null;
+  if (err.detail) return err.detail;
+  if (err.message) return err.message;
+  return String(err);
+}
+
 async function ocGeocode(place) {
   const key = process.env.OPENCAGE_KEY;
-  if (!key) throw new Error("Falta OPENCAGE_KEY");
+  if (!key) throw Object.assign(new Error("Falta OPENCAGE_KEY"), { status: 500 });
 
   const url =
     "https://api.opencagedata.com/geocode/v1/json?q=" +
@@ -45,10 +52,10 @@ async function ocGeocode(place) {
     `&key=${key}&limit=1&language=es&no_annotations=0`;
 
   const r = await fetch(url);
-  if (!r.ok) throw new Error(`OpenCage ${r.status}`);
+  if (!r.ok) throw Object.assign(new Error(`OpenCage ${r.status}`), { status: r.status });
   const j = await r.json();
   const g = j.results && j.results[0];
-  if (!g) throw new Error("Lugar no encontrado");
+  if (!g) throw Object.assign(new Error("Lugar no encontrado"), { status: 400 });
 
   return { lat: g.geometry.lat, lon: g.geometry.lng };
 }
@@ -62,9 +69,9 @@ async function googleTimeZone(lat, lon) {
   const url = `https://maps.googleapis.com/maps/api/timezone/json?location=${lat},${lon}&timestamp=${ts}&key=${key}`;
 
   const r = await fetch(url);
-  if (!r.ok) throw new Error(`Google TZ ${r.status}`);
+  if (!r.ok) throw Object.assign(new Error(`Google TZ ${r.status}`), { status: r.status });
   const j = await r.json();
-  if (j.status !== "OK") throw new Error(`Google TZ ${j.status}`);
+  if (j.status !== "OK") throw Object.assign(new Error(`Google TZ ${j.status}`), { status: 502 });
 
   const total = (j.rawOffset || 0) + (j.dstOffset || 0);
   return { tzHours: total / 3600, source: "google" };
@@ -73,7 +80,11 @@ async function googleTimeZone(lat, lon) {
 async function astroCall(endpoint, payload) {
   const id = process.env.ASTRO_USER_ID;
   const key = process.env.ASTRO_API_KEY;
-  if (!id || !key) throw new Error("Faltan ASTRO_USER_ID / ASTRO_API_KEY");
+  if (!id || !key) {
+    const e = new Error("Faltan ASTRO_USER_ID / ASTRO_API_KEY");
+    e.status = 500;
+    throw e;
+  }
 
   const auth = Buffer.from(`${id}:${key}`).toString("base64");
   const r = await fetch(endpoint, {
@@ -90,15 +101,17 @@ async function astroCall(endpoint, payload) {
   try {
     j = JSON.parse(text);
   } catch {
-    throw new Error(`AstrologyAPI parse error: ${text.slice(0, 200)}`);
+    const e = new Error(`AstrologyAPI parse error: ${text.slice(0, 200)}`);
+    e.status = r.status || 502;
+    throw e;
   }
 
   if (!r.ok) {
-    // mensaje claro para planes sin acceso
+    // mensaje claro para planes sin acceso / rate limit / etc.
     const msg = j.msg || j.message || j.error || `AstrologyAPI ${r.status}`;
-    const detail = j || null;
     const err = new Error(msg);
-    err.detail = detail;
+    err.detail = j || null;
+    err.status = r.status || 502;
     throw err;
   }
   return j;
@@ -161,12 +174,24 @@ module.exports = async (req, res) => {
       return bad(res, 400, "Faltan parámetros", { need: ["date", "time", "place"] });
     }
 
-    // 1) Geocodificación
-    const { lat, lon } = await ocGeocode(place);
+    // 1) Geocodificación (errores explícitos)
+    let lat, lon;
+    try {
+      const g = await ocGeocode(place);
+      lat = g.lat; lon = g.lon;
+    } catch (e) {
+      return bad(res, e.status || 400, "Lugar no encontrado o error de geocodificación.", detailFromError(e));
+    }
 
-    // 2) Zona horaria (horas). Si falla o no hay key, usamos 0 (UTC)
-    const tz = await googleTimeZone(lat, lon).catch(() => ({ tzHours: 0, source: "fallback" }));
-    const timezone = tz.tzHours;
+    // 2) Zona horaria (si falla, fallback a 0)
+    let timezone = 0, tzSource = "fallback";
+    try {
+      const tz = await googleTimeZone(lat, lon);
+      timezone = tz.tzHours;
+      tzSource = tz.source || "google";
+    } catch (_) {
+      // seguimos con fallback
+    }
 
     // Payload común para AstrologyAPI
     const [Y, M, D] = date.split("-").map(s => parseInt(s, 10));
@@ -180,11 +205,21 @@ module.exports = async (req, res) => {
     };
 
     // 3) Gráfico (SVG/PNG) — natal_wheel_chart (Starter)
-    const chartResp = await astroCall(EP_WESTERN_CHART, astroBase);
+    let chartResp;
+    try {
+      chartResp = await astroCall(EP_WESTERN_CHART, astroBase);
+    } catch (e) {
+      return bad(res, e.status || 502, "Error al pedir el gráfico a AstrologyAPI.", detailFromError(e));
+    }
     const chartUrl = normalizeChartUrl(chartResp);
 
     // 4) Planetas — planets/tropical (trae Sol, Luna y resto)
-    const planetsResp = await astroCall(EP_PLANETS, astroBase);
+    let planetsResp;
+    try {
+      planetsResp = await astroCall(EP_PLANETS, astroBase);
+    } catch (e) {
+      return bad(res, e.status || 502, "Error al pedir posiciones a AstrologyAPI.", detailFromError(e));
+    }
 
     const sunObj  = (planetsResp || []).find(p => /sun/i.test(p.name || ""));
     const moonObj = (planetsResp || []).find(p => /moon/i.test(p.name || ""));
@@ -197,16 +232,21 @@ module.exports = async (req, res) => {
       ? { sign: moonObj.sign || moonObj.sign_name || moonObj.signName || "", text: moonObj.full_degree ? `Grados: ${moonObj.full_degree}` : "" }
       : { sign: "", text: "" };
 
-    // 5) Ascendente (estimado) — casa 1 de house_cusps/tropical
-    const houses = await astroCall(EP_HOUSES, astroBase).catch(() => null);
-    const house1 = houses && (houses.houses || houses).find(h => String(h.house) === "1");
+    // 5) Ascendente (estimado) — casa 1 de house_cusps/tropical (si falla, seguimos sin asc)
+    let houses = null, house1 = null;
+    try {
+      houses = await astroCall(EP_HOUSES, astroBase);
+      house1 = houses && (houses.houses || houses).find(h => String(h.house) === "1");
+    } catch (_) {
+      // opcional en plan Starter; seguimos sin romper
+    }
     const asc = {
       sign: (house1 && (house1.sign_name || house1.sign || house1.signName)) || "",
-      text: house1 && house1.degree ? `Grados: ${house1.degree}` : "",
+      text: house1 && house1.degree != null ? `Grados: ${house1.degree}` : "",
       source: houses ? "house_cusps/tropical" : "n/a",
     };
 
-    // 6) NUEVO: construir listado "positions" (tipo Sun/Moon/etc.)
+    // 6) Construir listado "positions" (Sun/Moon/etc.) + Asc
     const positions = (Array.isArray(planetsResp) ? planetsResp : [])
       .filter(p => p && p.name)
       .map(p => {
@@ -219,7 +259,6 @@ module.exports = async (req, res) => {
         return { key, name, sign, degMin, retro };
       });
 
-    // sumar Ascendente como item si lo tenemos
     if (asc.sign) {
       const ascSignKey = String(asc.sign).toLowerCase();
       positions.push({
@@ -231,7 +270,7 @@ module.exports = async (req, res) => {
       });
     }
 
-    // 7) Respuesta
+    // 7) Respuesta OK
     res.statusCode = 200;
     res.setHeader("Content-Type", "application/json; charset=utf-8");
     res.end(JSON.stringify({
@@ -239,10 +278,11 @@ module.exports = async (req, res) => {
       sun,
       moon,
       asc,
-      positions, // <--- NUEVO
-      meta: { lat, lon, timezone, tzSource: tz.source || "unknown" },
+      positions,
+      meta: { lat, lon, timezone, tzSource },
     }, null, 2));
   } catch (err) {
-    return bad(res, 500, "Error interno del servidor", err.detail || err.message);
+    const status = err?.status && Number.isInteger(err.status) ? err.status : 500;
+    return bad(res, status, err?.message || "Error interno del servidor", detailFromError(err));
   }
 };
