@@ -1,4 +1,5 @@
 // api/chart.js — Vercel Serverless (CommonJS) — Compatible con PLAN STARTER
+// Devuelve además un bloque "debug" (si la URL trae ?debug=1) para comprobar credenciales cargadas.
 
 // ====== C O N F I G ======
 const ASTRO_BASE = "https://json.astrologyapi.com/v1";
@@ -49,13 +50,15 @@ function applyCors(res, origin) {
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With");
   res.setHeader("Access-Control-Max-Age", "600"); // cachea el preflight 10min
+  // Evitar cache intermedio de la respuesta JSON (útil mientras cambiamos credenciales)
+  res.setHeader("Cache-Control", "no-store");
 }
 
 // ====== H E L P E R S ======
-function bad(res, status, msg, detail) {
+function bad(res, status, msg, detail, extra = {}) {
   res.statusCode = status;
   res.setHeader("Content-Type", "application/json; charset=utf-8");
-  res.end(JSON.stringify({ error: msg, detail: detail ?? null }));
+  res.end(JSON.stringify({ error: msg, detail: detail ?? null, ...extra }, null, 2));
 }
 
 function detailFromError(err) {
@@ -94,7 +97,7 @@ async function googleTimeZone(lat, lon) {
 }
 
 async function astroCall(endpoint, payload) {
-  const id = process.env.ASTRO_USER_ID;
+  const id  = process.env.ASTRO_USER_ID;
   const key = process.env.ASTRO_API_KEY;
   if (!id || !key) {
     const e = new Error("Faltan ASTRO_USER_ID / ASTRO_API_KEY");
@@ -150,16 +153,22 @@ module.exports = async (req, res) => {
     if (req.method === "OPTIONS") { res.statusCode = 204; return res.end(); }
     if (req.method !== "POST") return bad(res, 405, "Method Not Allowed. Use POST.");
 
+    // Debug flag (?debug=1)
+    const url = new URL(req.url, "http://local");
+    const DEBUG = url.searchParams.get("debug") === "1";
+
     // Body
     let body = {};
     try { body = typeof req.body === "string" ? JSON.parse(req.body) : (req.body || {}); } catch {}
     const { date, time, place } = body;
-    if (!date || !time || !place) return bad(res, 400, "Faltan parámetros", { need:["date","time","place"] });
+    if (!date || !time || !place) {
+      return bad(res, 400, "Faltan parámetros", { need:["date","time","place"] }, DEBUG ? debugBlock() : {});
+    }
 
     // 1) Geo
     let lat, lon;
     try { ({lat,lon} = await ocGeocode(place)); }
-    catch (e) { return bad(res, e.status || 400, "Lugar no encontrado o error de geocodificación.", detailFromError(e)); }
+    catch (e) { return bad(res, e.status || 400, "Lugar no encontrado o error de geocodificación.", detailFromError(e), DEBUG ? debugBlock() : {}); }
 
     // 2) TZ
     let timezone = 0, tzSource = "fallback";
@@ -222,9 +231,7 @@ module.exports = async (req, res) => {
     }
 
     // 7) OK
-    res.statusCode = 200;
-    res.setHeader("Content-Type", "application/json; charset=utf-8");
-    res.end(JSON.stringify({
+    const payload = {
       chartUrl,
       sun,
       moon,
@@ -232,9 +239,30 @@ module.exports = async (req, res) => {
       positions,
       meta: { lat, lon, timezone, tzSource },
       errors,
-    }, null, 2));
+    };
+    if (DEBUG) payload.debug = debugBlock();
+    res.statusCode = 200;
+    res.setHeader("Content-Type", "application/json; charset=utf-8");
+    res.end(JSON.stringify(payload, null, 2));
+
   } catch (err) {
     const status = err?.status && Number.isInteger(err.status) ? err.status : 500;
-    return bad(res, status, err?.message || "Error interno del servidor", detailFromError(err));
+    const extra = debugBlock();
+    return bad(res, status, err?.message || "Error interno del servidor", detailFromError(err), extra);
   }
 };
+
+// Devuelve un bloque de depuración SIN revelar la apiKey completa.
+function debugBlock() {
+  const uid = String(process.env.ASTRO_USER_ID || "");
+  const key = String(process.env.ASTRO_API_KEY || "");
+  const mask = (s, show = 4) => s ? `${s.slice(0, show)}…${s.slice(-4)}` : "";
+  return {
+    debug: {
+      astroUserMasked: uid ? mask(uid) : null,
+      hasKey: !!key,
+      keyPrefix: key ? key.slice(0, 6) : null, // para que verifiques rápido que cambió
+      envNote: "Variables leídas de process.env (Vercel). Si no cambian, revisá Environment y redeploy."
+    }
+  };
+}
