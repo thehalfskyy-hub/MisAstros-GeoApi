@@ -234,6 +234,9 @@ function overlayDividersFromSigns(svgText) {
     // mitad de arco (cuidando el wrap)
     let mid = (a + ((b < a) ? (b + 2*Math.PI) : b)) / 2;
     if (mid >= 2*Math.PI) mid -= 2*Math.PI;
+mid += 15 * Math.PI / 180; // mueve los divisores 15° en sentido horario
+
+    
 
     const x1 = cx + r1 * Math.cos(mid);
     const y1 = cy + r1 * Math.sin(mid);
