@@ -139,19 +139,7 @@ function tweakSvg(svgText) {
 
   // ✅ SOLO engrosamos las LÍNEAS DE ASPECTOS (rojo/azul/verde). Nada más.
   const COLORS = ['#ff0000', '#FF0000', '#0000ff', '#0000FF', '#00ff00', '#00FF00'];
-  for (const c of COLORS) {
-    // Reemplazar stroke-width existente
-    out = out.replace(
-      new RegExp(`(<(?:line|path)\\b[^>]*stroke="${c}"[^>]*?)\\s+stroke-width="[^"]+"([^>]*>)`, "g"),
-      `$1 stroke-width="5"$2`
-    );
-    // Si no tiene stroke-width, lo agregamos
-    out = out.replace(
-      new RegExp(`(<(?:line|path)\\b[^>]*stroke="${c}"(?![^>]*stroke-width)[^>]*)(>)`, "g"),
-      `$1 stroke-width="5"$2`
-    );
-  }
-
+  for (const c of COLORS)
 
   // —— Divisores externos entre signos → blanco (versión robusta)
   out = out.replace(/<(?:line|path)\b[^>]*>/g, (tag) => {
