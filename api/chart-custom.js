@@ -217,10 +217,12 @@ function injectWhiteDividers(svgText) {
   // angCentroSigno = ángulo donde cae el centro de Aries (o del primer signo detectado)
   const angCentroSigno = detectSignRotationDegrees(svgText);
 
-  // Para dibujar divisores en los BORDES de cada signo:
-  // si el centro de Aries es angCentroSigno, sus bordes están a ±15°.
-  // El primer borde (0° Aries) = angCentroSigno - 15°.
-  const primerBorde = angCentroSigno - 15;
+ // 👉 Ajuste fino manual (si necesitás correr los divisores 1 o 2 grados)
+const microOffset = 0; // probá con 1 o -1 si ves que están levemente corridos
+
+// Para dibujar divisores en los BORDES de cada signo:
+// si el centro de Aries es angCentroSigno, sus bordes están a ±15°.
+const primerBorde = angCentroSigno - 15 + microOffset;
 
   const lines = [];
   for (let i = 0; i < 12; i++) {
