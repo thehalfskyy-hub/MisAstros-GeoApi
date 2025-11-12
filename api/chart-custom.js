@@ -131,74 +131,9 @@ const SIGNO_ES = {
   sagittarius:"Sagitario", capricorn:"Capricornio", aquarius:"Acuario", pisces:"Piscis",
 };
 
-// ---------- Post-proceso del SVG ----------
-function tweakSvg(svgText) {
-  if (!svgText || typeof svgText !== "string") return svgText;
-
-  let out = svgText;
-
-  // ✅ SOLO engrosamos las LÍNEAS DE ASPECTOS (rojo/azul/verde). Nada más.
-  const COLORS = ['#ff0000', '#FF0000', '#0000ff', '#0000FF', '#00ff00', '#00FF00'];
-  for (const c of COLORS) {
-    // Reemplazar stroke-width existente
-    out = out.replace(
-      new RegExp(`(<(?:line|path)\\b[^>]*stroke="${c}"[^>]*?)\\s+stroke-width="[^"]+"([^>]*>)`, "g"),
-      `$1 stroke-width="5"$2`
-    );
-    // Si no tiene stroke-width, lo agregamos
-    out = out.replace(
-      new RegExp(`(<(?:line|path)\\b[^>]*stroke="${c}"(?![^>]*stroke-width)[^>]*)(>)`, "g"),
-      `$1 stroke-width="5"$2`
-    );
-  }
-
-
-
-
-  function tweakSvg(svgText) {
-  if (!svgText || typeof svgText !== "string") return svgText;
-  let out = svgText;
-
-  // ✅ SOLO engrosamos las líneas de aspectos (rojo/azul/verde)
-  const COLORS = ['#ff0000', '#FF0000', '#0000ff', '#0000FF', '#00ff00', '#00FF00'];
-  for (const c of COLORS) {
-    out = out.replace(
-      new RegExp(`(<(?:line|path|polyline|polygon)\\b[^>]*stroke="${c}"[^>]*?)\\s+stroke-width="[^"]+"([^>]*>)`, "g"),
-      `$1 stroke-width="5"$2`
-    );
-    out = out.replace(
-      new RegExp(`(<(?:line|path|polyline|polygon)\\b[^>]*stroke="${c}"(?![^>]*stroke-width)[^>]*)(>)`, "g"),
-      `$1 stroke-width="5"$2`
-    );
-    // también si viene en style="stroke:#ff0000; stroke-width:1"
-    out = out.replace(
-      new RegExp(`(style="[^"]*stroke:${c}[^"]*?stroke-width:)\\s*[^;"]+`, "g"),
-      `$1 5`
-    );
-  }
-
-  // 👉 agregamos nuestros divisores blancos por encima del aro negro
-  out = injectWhiteDividers(out);
-
-  return out;
-}
-
-
-
-
-  
-  // No tocamos ningún otro trazo para conservar grosores originales.
-  return out;
-}
-
-function svgToDataUrl(svgText) {
-  return "data:image/svg+xml;utf8," + encodeURIComponent(svgText);
-}
-
-
-
-
-
+/* =========================
+   Post-proceso del SVG
+   ========================= */
 
 // ——— Inyecta 12 divisores blancos en el aro externo (no toca nada existente)
 function injectWhiteDividers(svgText) {
@@ -244,14 +179,44 @@ function injectWhiteDividers(svgText) {
   return svgText.replace(/<\/svg>\s*$/i, `${group}\n</svg>`);
 }
 
+function tweakSvg(svgText) {
+  if (!svgText || typeof svgText !== "string") return svgText;
 
+  let out = svgText;
 
+  // ✅ Engrosar SOLO las líneas de aspectos (rojo/azul/verde) — cubre line/path/polyline/polygon y style=
+  const COLORS = ['#ff0000', '#FF0000', '#0000ff', '#0000FF', '#00ff00', '#00FF00'];
+  for (const c of COLORS) {
+    // con atributo stroke-width
+    out = out.replace(
+      new RegExp(`(<(?:line|path|polyline|polygon)\\b[^>]*stroke="${c}"[^>]*?)\\s+stroke-width="[^"]+"([^>]*>)`, "g"),
+      `$1 stroke-width="5"$2`
+    );
+    // sin atributo stroke-width
+    out = out.replace(
+      new RegExp(`(<(?:line|path|polyline|polygon)\\b[^>]*stroke="${c}"(?![^>]*stroke-width)[^>]*)(>)`, "g"),
+      `$1 stroke-width="5"$2`
+    );
+    // casos style="stroke:#ff0000; stroke-width:1"
+    out = out.replace(
+      new RegExp(`(style="[^"]*stroke:${c}[^"]*?stroke-width:)\\s*[^;"]+`, "g"),
+      `$1 5`
+    );
+  }
 
+  // 👉 Agregar divisores blancos en el aro externo
+  out = injectWhiteDividers(out);
 
+  return out;
+}
 
+function svgToDataUrl(svgText) {
+  return "data:image/svg+xml;utf8," + encodeURIComponent(svgText);
+}
 
-
-// ---------- Handler ----------
+/* =========================
+   Handler
+   ========================= */
 module.exports = async (req, res) => {
   try {
     const origin = req.headers.origin || "";
@@ -297,7 +262,7 @@ module.exports = async (req, res) => {
     const [HH, mm] = time.split(":").map(s => parseInt(s || "0", 10));
     const astroBase = { day: D, month: M, year: Y, hour: HH, min: mm, lat, lon, tzone: timezone };
 
-    // 3) Gráfico — pedimos SVG (aro exterior negro e íconos blancos), luego sólo engrosamos aspectos
+    // 3) Gráfico — pedimos SVG (aro exterior negro e íconos blancos), luego post-proceso
     let chartUrl = null;
     let chartError = null;
     try {
@@ -307,7 +272,7 @@ module.exports = async (req, res) => {
         chart_size: 500,
         sign_background: "#000000",   // aro exterior negro
         sign_icon_color: "#FFFFFF",   // íconos de signos blancos
-        planet_icon_color: "#000000", // íconos de planetas blancos
+        planet_icon_color: "#000000", // (color de iconos de planetas en el SVG de proveedor)
         inner_circle_background: "#FFFFFF"
       });
 
