@@ -137,38 +137,40 @@ function tweakSvg(svgText) {
 
   let out = svgText;
 
-  // 1) Engrosar trazos pequeños (0.4–1.0) → +0.6 aprox
-  out = out.replace(/stroke-width="0\.4"/g, 'stroke-width="2"');
-  out = out.replace(/stroke-width="0\.5"/g, 'stroke-width="2"');
-  out = out.replace(/stroke-width="0\.6"/g, 'stroke-width="2"');
-  out = out.replace(/stroke-width="0\.7"/g, 'stroke-width=""');
-  out = out.replace(/stroke-width="0\.8"/g, 'stroke-width="2"');
-  out = out.replace(/stroke-width="0\.9"/g, 'stroke-width="2"');
-  out = out.replace(/stroke-width="1"/g,     'stroke-width="2"');
+  // 1) Engrosar TODOS los trazos finos → 3px (aspectos, divisiones, ejes, etc.)
+  out = out
+    .replace(/stroke-width="0\.[0-9]+"/g, 'stroke-width="3"')
+    .replace(/stroke-width="1(\.0+)?"/g, 'stroke-width="3"')
+    .replace(/stroke-width="1\.[0-9]+"/g, 'stroke-width="3"')
+    .replace(/stroke-width="2(\.[0-9]+)?"/g, 'stroke-width="3"');
 
-  // 2) Aspectos típicos (rojo/azul/verde) → asegurar 1.4
+  // 2) Aspectos (rojo/azul/verde) → asegurar 3px
   const COLORS = ['#ff0000', '#FF0000', '#0000ff', '#0000FF', '#00ff00', '#00FF00'];
   for (const c of COLORS) {
-    // si tiene stroke-width, lo elevamos; si no, lo agregamos
     out = out.replace(
       new RegExp(`(<(?:line|path)\\b[^>]*stroke="${c}"[^>]*?)\\s+stroke-width="[^"]+"([^>]*>)`, "g"),
-      `$1 stroke-width="1.4"$2`
+      `$1 stroke-width="3"$2`
     );
     out = out.replace(
       new RegExp(`(<(?:line|path)\\b[^>]*stroke="${c}"(?![^>]*stroke-width)[^>]*)(>)`, "g"),
-      `$1 stroke-width="1.4"$2`
+      `$1 stroke-width="3"$2`
     );
   }
 
-  // 3) Líneas de casas/ejes (muchas veces negras/grises finas) → 1.2
-  // (Heurístico conservador: sólo si eran <=1 originalmente)
+  // 3) Divisores exteriores entre signos (borde del aro)
+  // Cambiamos líneas negras / grises finas del borde exterior a blancas
   out = out.replace(
-    /(<(?:line|path)\b[^>]*stroke="#(?:000000|111111|222222)"[^>]*stroke-width=")(0?\.[0-9]+|1)([^"]*")/g,
-    `$11.2$3`
+    /(<(?:line|path)\b[^>]*stroke="#(?:000000|111111|222222|333333)"[^>]*)(>)/g,
+    `$1 stroke="#FFFFFF" stroke-width="3"$2`
   );
+
+  // 4) Asegurar que no haya líneas invisibles por debajo del negro
+  // (en caso de duplicados superpuestos)
+  out = out.replace(/stroke="#000000"/g, 'stroke="#FFFFFF"');
 
   return out;
 }
+
 
 function svgToDataUrl(svgText) {
   return "data:image/svg+xml;utf8," + encodeURIComponent(svgText);
@@ -230,7 +232,7 @@ module.exports = async (req, res) => {
         chart_size: 500,
         sign_background: "#000000",   // aro exterior negro
         sign_icon_color: "#FFFFFF",   // íconos blanco
-        planet_icon_color: "#FFFFFF", // planetas blanco
+        planet_icon_color: "#000000", // planetas blanco
         inner_circle_background: "#FFFFFF"
       });
 
