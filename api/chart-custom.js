@@ -1,5 +1,6 @@
 // api/chart-custom.js — Vercel Serverless (CommonJS)
-// Dibuja divisores blancos *encima* de los divisores reales grises, sin modificar el SVG original.
+// Overlay: detecta divisores radiales reales (aunque vengan como <path M..L..>) y dibuja arriba líneas blancas.
+// No modifica nada del SVG original.
 
 const ALLOWED_ORIGINS = new Set([
   "https://misastros.com",
@@ -135,12 +136,8 @@ const SIGNO_ES = {
    Post-proceso del SVG
    ========================= */
 
-// ——— Escanea las líneas radiales finas cercanas al aro de signos (grises/negro tenue),
-//     y agrega *encima* un grupo de líneas blancas clonadas en las mismas coordenadas.
-function overlayWhiteDividersOnDetected(svgText) {
-  if (!svgText || typeof svgText !== "string") return svgText;
-
-  // viewBox (asumido 0 0 500 500, pero lo leemos por si cambia)
+// Lee viewBox y medidas
+function getViewBox(svgText) {
   const vb = /viewBox="\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s*"/i.exec(svgText);
   let x = 0, y = 0, w = 500, h = 500;
   if (vb) {
@@ -152,87 +149,131 @@ function overlayWhiteDividersOnDetected(svgText) {
     if (mW) w = parseFloat(mW[1]);
     if (mH) h = parseFloat(mH[1]);
   }
+  return { x, y, w, h, cx: x + w/2, cy: y + h/2, half: Math.min(w,h)/2 };
+}
 
-  const cx = x + w / 2;
-  const cy = y + h / 2;
-  const half = Math.min(w, h) / 2;
+function readAttr(attrs, name) {
+  const m = new RegExp(`${name}="([^"]+)"`, "i").exec(attrs);
+  return m ? m[1] : null;
+}
 
-  const LINE_RE = /<line\b([^>]*?)\/>/gi;
+function parseStyle(styleStr) {
+  const out = {};
+  if (!styleStr) return out;
+  styleStr.split(";").forEach(p => {
+    const [k,v] = p.split(":").map(s=>s && s.trim());
+    if (k && v) out[k.toLowerCase()] = v;
+  });
+  return out;
+}
 
-  const readAttr = (s, name) => {
-    const m = new RegExp(`${name}="([^"]+)"`, "i").exec(s);
-    return m ? m[1] : null;
-  };
+// Extrae segmentos "M x y L x y" de un atributo d de <path> como pares de puntos
+function extractPathLineSegments(d) {
+  if (!d) return [];
+  // Acepta múltiples pares M…L… en el mismo path
+  const segs = [];
+  const re = /M\s*([-\d.]+)[,\s]+([-\d.]+)\s*L\s*([-\d.]+)[,\s]+([-\d.]+)/ig;
+  let m;
+  while ((m = re.exec(d))) {
+    const x1 = parseFloat(m[1]), y1 = parseFloat(m[2]);
+    const x2 = parseFloat(m[3]), y2 = parseFloat(m[4]);
+    if ([x1,y1,x2,y2].every(Number.isFinite)) segs.push({ x1, y1, x2, y2 });
+  }
+  return segs;
+}
 
-  const isDarkGrey = (stroke) => {
-    if (!stroke) return false;
-    const s = stroke.toLowerCase().replace(/\s/g, "");
-    // negro/grises habituales en el aro
-    return (
-      s === "#000" || s === "#000000" ||
-      s === "#111111" || s === "#222222" || s === "#333333" ||
-      s === "#444444" || s === "#555555" || s === "#666666" ||
-      s === "black" || s.startsWith("rgba(0,0,0") || s.startsWith("rgb(0,0,0")
-    );
-  };
+// Heurística geométrica para decidir si una línea es un divisor radial del aro
+function looksLikeOuterDivider(seg, geom, opts={}) {
+  const { cx, cy, half } = geom;
+  const x1=seg.x1, y1=seg.y1, x2=seg.x2, y2=seg.y2;
 
+  const rA = Math.hypot(x1 - cx, y1 - cy);
+  const rB = Math.hypot(x2 - cx, y2 - cy);
+  const length = Math.hypot(x2 - x1, y2 - y1);
+
+  // tolerancias más amplias para cubrir variaciones del proveedor
+  const nearOuter = v => v >= half*0.84 && v <= half*1.04; // toca aro exterior
+  const nearRing  = v => v >= half*0.70 && v <= half*0.95; // llega al anillo de signos
+  const looksRadial = (nearOuter(rA) && nearRing(rB)) || (nearOuter(rB) && nearRing(rA));
+  const longEnough  = length >= half*0.08; // suficientemente larga
+
+  return looksRadial && longEnough;
+}
+
+// Dibuja un overlay blanco encima de los divisores detectados
+function overlayWhiteDividersOnDetected(svgText) {
+  const geom = getViewBox(svgText);
   const candidates = [];
-  svgText.replace(LINE_RE, (whole, attrs) => {
+
+  // 1) Captura <line .../>
+  svgText.replace(/<line\b([^>]*?)\/>/gi, (whole, attrs) => {
     const x1 = parseFloat(readAttr(attrs, "x1") || "NaN");
     const y1 = parseFloat(readAttr(attrs, "y1") || "NaN");
     const x2 = parseFloat(readAttr(attrs, "x2") || "NaN");
     const y2 = parseFloat(readAttr(attrs, "y2") || "NaN");
-    if (![x1, y1, x2, y2].every(Number.isFinite)) return whole;
+    if (![x1,y1,x2,y2].every(Number.isFinite)) return whole;
 
-    const rA = Math.hypot(x1 - cx, y1 - cy);
-    const rB = Math.hypot(x2 - cx, y2 - cy);
-    const length = Math.hypot(x2 - x1, y2 - y1);
+    const style = parseStyle(readAttr(attrs, "style"));
+    const sw = parseFloat(readAttr(attrs, "stroke-width") || style["stroke-width"] || "0.6");
 
-    const stroke = readAttr(attrs, "stroke");
-    const style = readAttr(attrs, "style") || "";
-    let styleStroke = null, styleWidth = null, sw = null;
-
-    const mStroke = /stroke:\s*([^;"]+)/i.exec(style);
-    if (mStroke) styleStroke = mStroke[1].trim();
-    const mWidth = /stroke-width:\s*([0-9.]+)/i.exec(style);
-    if (mWidth) styleWidth = parseFloat(mWidth[1]);
-
-    const attrWidth = parseFloat(readAttr(attrs, "stroke-width") || "NaN");
-    if (Number.isFinite(attrWidth)) sw = attrWidth;
-
-    const effStroke = (stroke || styleStroke || "").trim();
-    const effWidth  = Number.isFinite(styleWidth) ? styleWidth : (Number.isFinite(sw) ? sw : 0.6);
-
-    // heurística: línea radial que pega en aro externos, larga y fina
-    const nearOuter = (v) => v >= half * 0.88 && v <= half * 1.02;
-    const nearRing  = (v) => v >= half * 0.76 && v <= half * 0.98;
-    const looksRadial =
-      (nearOuter(rA) && nearRing(rB)) || (nearOuter(rB) && nearRing(rA));
-    const longEnough = length >= half * 0.10;
-    const thinStroke = effWidth <= 1.2;
-
-    if (looksRadial && longEnough && thinStroke && isDarkGrey(effStroke)) {
-      candidates.push({ x1, y1, x2, y2 });
+    // si vienen heredadas y no tienen stroke, igual probamos por geometría
+    if (looksLikeOuterDivider({x1,y1,x2,y2}, geom) && (isNaN(sw) || sw <= 1.5)) {
+      candidates.push({x1,y1,x2,y2});
     }
     return whole;
   });
 
-  if (!candidates.length) return svgText; // nada detectado → no tocamos
+  // 2) Captura segmentos rectos en <path d="M..L..">
+  svgText.replace(/<path\b([^>]*?)\/>/gi, (whole, attrs) => {
+    const d = readAttr(attrs, "d") || "";
+    const style = parseStyle(readAttr(attrs, "style"));
+    const sw = parseFloat(readAttr(attrs, "stroke-width") || style["stroke-width"] || "0.6");
+    const segs = extractPathLineSegments(d);
+    for (const seg of segs) {
+      if (looksLikeOuterDivider(seg, geom) && (isNaN(sw) || sw <= 1.5)) {
+        candidates.push(seg);
+      }
+    }
+    return whole;
+  });
 
-  // dibujamos encima (al final del SVG) nuestras líneas blancas clonadas
+  // 3) También probamos <polyline>/<polygon> con solo 2 puntos (raro pero posible)
+  const polyRe = /<(polyline|polygon)\b([^>]*?)\/>/gi;
+  svgText.replace(polyRe, (whole, tag, attrs) => {
+    const pts = (readAttr(attrs, "points") || "").trim();
+    // formato: "x1,y1 x2,y2"
+    const m = /^\s*([-\d.]+)[,\s]+([-\d.]+)\s+([-\d.]+)[,\s]+([-\d.]+)\s*$/i.exec(pts);
+    if (!m) return whole;
+    const x1=parseFloat(m[1]), y1=parseFloat(m[2]), x2=parseFloat(m[3]), y2=parseFloat(m[4]);
+    if (![x1,y1,x2,y2].every(Number.isFinite)) return whole;
+
+    const style = parseStyle(readAttr(attrs, "style"));
+    const sw = parseFloat(readAttr(attrs, "stroke-width") || style["stroke-width"] || "0.6");
+
+    if (looksLikeOuterDivider({x1,y1,x2,y2}, geom) && (isNaN(sw) || sw <= 1.5)) {
+      candidates.push({x1,y1,x2,y2});
+    }
+    return whole;
+  });
+
+  if (!candidates.length) {
+    // nada detectado → devolvemos tal cual
+    return svgText;
+  }
+
+  // overlay blanco encima (final del SVG)
   const group =
     `<g id="mis-divisores-blancos-overlay" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round">` +
-    candidates
-      .map(({x1,y1,x2,y2}) => `<line x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}" />`)
-      .join("") +
+    candidates.map(({x1,y1,x2,y2}) =>
+      `<line x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}" />`
+    ).join("") +
     `</g>`;
 
   return svgText.replace(/<\/svg>\s*$/i, `${group}\n</svg>`);
 }
 
-// (Opcional) Engrosar solo las líneas de aspectos por color
+// (Opcional) Engrosar SOLO líneas de aspectos por color (desactivado por defecto)
 function thickenAspectLines(svgText, width = 5) {
-  if (!svgText || typeof svgText !== "string") return svgText;
   let out = svgText;
   const COLORS = ['#ff0000', '#FF0000', '#0000ff', '#0000FF', '#00ff00', '#00FF00'];
   for (const c of COLORS) {
@@ -254,8 +295,8 @@ function thickenAspectLines(svgText, width = 5) {
 
 function tweakSvg(svgText) {
   let out = svgText;
-  out = overlayWhiteDividersOnDetected(out); // ← ahora los divisores blancos se dibujan *encima*
-  // out = thickenAspectLines(out, 5); // ← activá si querés engrosar aspectos
+  out = overlayWhiteDividersOnDetected(out);     // ← clona y pinta en blanco los divisores reales
+  // out = thickenAspectLines(out, 5);           // ← si querés engrosar aspectos, activá esto
   return out;
 }
 
@@ -271,19 +312,12 @@ module.exports = async (req, res) => {
     const origin = req.headers.origin || "";
     setCors(res, origin);
 
-    if (req.method === "OPTIONS") {
-      res.statusCode = 204;
-      return res.end();
-    }
-    if (req.method !== "POST") {
-      return bad(res, 405, "Method Not Allowed. Use POST.");
-    }
+    if (req.method === "OPTIONS") { res.statusCode = 204; return res.end(); }
+    if (req.method !== "POST") { return bad(res, 405, "Method Not Allowed. Use POST."); }
 
     // Body
     let body = {};
-    try {
-      body = typeof req.body === "string" ? JSON.parse(req.body) : (req.body || {});
-    } catch {}
+    try { body = typeof req.body === "string" ? JSON.parse(req.body) : (req.body || {}); } catch {}
     const { date, time, place } = body;
     if (!date || !time || !place) {
       return bad(res, 400, "Faltan parámetros", { need: ["date", "time", "place"] });
@@ -291,37 +325,29 @@ module.exports = async (req, res) => {
 
     // Geocodificación
     let lat, lon;
-    try {
-      const g = await ocGeocode(place);
-      lat = g.lat; lon = g.lon;
-    } catch (e) {
-      return bad(res, e.status || 400, "Lugar no encontrado o error de geocodificación.", detailFromError(e));
-    }
+    try { const g = await ocGeocode(place); lat = g.lat; lon = g.lon; }
+    catch (e) { return bad(res, e.status || 400, "Lugar no encontrado o error de geocodificación.", detailFromError(e)); }
 
     // Zona horaria
     let timezone = 0, tzSource = "fallback";
-    try {
-      const tz = await googleTimeZone(lat, lon);
-      timezone = tz.tzHours;
-      tzSource = tz.source || "google";
-    } catch (_) {}
+    try { const tz = await googleTimeZone(lat, lon); timezone = tz.tzHours; tzSource = tz.source || "google"; }
+    catch (_) {}
 
     // Base astro
     const [Y, M, D] = date.split("-").map(s => parseInt(s, 10));
     const [HH, mm] = time.split(":").map(s => parseInt(s || "0", 10));
     const astroBase = { day: D, month: M, year: Y, hour: HH, min: mm, lat, lon, tzone: timezone };
 
-    // 3) Gráfico — pedimos SVG, luego post-proceso
-    let chartUrl = null;
-    let chartError = null;
+    // 3) Gráfico → pedimos SVG y post-procesamos
+    let chartUrl = null, chartError = null;
     try {
       const chartResp = await astroCall(EP_WESTERN_CHART, {
         ...astroBase,
         image_type: "svg",
         chart_size: 500,
         sign_background: "#000000",   // aro exterior negro
-        sign_icon_color: "#FFFFFF",   // íconos de signos blancos
-        planet_icon_color: "#000000", // (color de iconos de planetas en el SVG de proveedor)
+        sign_icon_color: "#FFFFFF",   // íconos signos blancos
+        planet_icon_color: "#000000", // (color icons planetas según proveedor)
         inner_circle_background: "#FFFFFF"
       });
 
@@ -340,11 +366,8 @@ module.exports = async (req, res) => {
 
     // 4) Planetas (para tu front)
     let planetsResp;
-    try {
-      planetsResp = await astroCall(EP_PLANETS, astroBase);
-    } catch (e) {
-      return bad(res, e.status || 502, "Error al pedir posiciones a AstrologyAPI.", detailFromError(e));
-    }
+    try { planetsResp = await astroCall(EP_PLANETS, astroBase); }
+    catch (e) { return bad(res, e.status || 502, "Error al pedir posiciones a AstrologyAPI.", detailFromError(e)); }
 
     const sunObj  = (planetsResp || []).find(p => /sun/i.test(p.name || ""));
     const moonObj = (planetsResp || []).find(p => /moon/i.test(p.name || ""));
@@ -357,12 +380,10 @@ module.exports = async (req, res) => {
       ? { sign: moonObj.sign || moonObj.sign_name || moonObj.signName || "", text: moonObj.full_degree ? `Grados: ${moonObj.full_degree}` : "" }
       : { sign: "", text: "" };
 
-    // 5) Ascendente estimado (opcional si lo necesitás en el front)
+    // 5) Ascendente estimado (opcional)
     let houses = null, house1 = null;
-    try {
-      houses = await astroCall(EP_HOUSES, astroBase);
-      house1 = houses && (houses.houses || houses).find(h => String(h.house) === "1");
-    } catch (_) {}
+    try { houses = await astroCall(EP_HOUSES, astroBase); house1 = houses && (houses.houses || houses).find(h => String(h.house) === "1"); }
+    catch (_) {}
     const asc = {
       sign: (house1 && (house1.sign_name || house1.sign || house1.signName)) || "",
       text: house1 && house1.degree != null ? `Grados: ${house1.degree}` : "",
