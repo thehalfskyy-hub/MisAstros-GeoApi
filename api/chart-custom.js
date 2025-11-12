@@ -132,11 +132,67 @@ const SIGNO_ES = {
 };
 
 /* =========================
-   Utilidades SVG (dinámico)
+   Post-proceso del SVG
    ========================= */
 
-// Obtiene centro y radio desde viewBox / width/height
-function getSvgGeom(svgText) {
+/** Detecta el offset (en grados) del anillo de signos.
+ *  1) Intenta leer transform="rotate(A,...)" en el <g id="astrology-radix-signs">.
+ *  2) Si no existe, estima ángulo con el primer <g transform="translate(x y)"> del anillo de signos.
+ *  Devuelve grados donde 0° es hacia la derecha (eje +X) y -90° apunta hacia arriba (coincide con cómo trazamos).
+ */
+function detectSignRotationDegrees(svgText) {
+  // 1) Intento directo: rotate en el grupo de signos
+  const grp = svgText.match(/<g[^>]*id="astrology-radix-signs"[^>]*>/i);
+  if (grp) {
+    const mRot = grp[0].match(/transform="[^"]*rotate\(\s*([-\d.]+)/i);
+    if (mRot) {
+      const deg = parseFloat(mRot[1]);
+      if (isFinite(deg)) return deg;
+    }
+  }
+
+  // 2) Estimación: primer translate de un hijo de astrology-radix-signs
+  //    Buscamos el bloque del grupo para rastrear hijos
+  const blockMatch = svgText.match(/<g[^>]*id="astrology-radix-signs"[^>]*>([\s\S]*?)<\/g>/i);
+  if (blockMatch) {
+    const block = blockMatch[1];
+    // Primer transform="translate(x y)" que aparezca
+    const mT = block.match(/transform="\s*translate\(\s*([-\d.]+)\s*,\s*([-\d.]+)\s*\)/i);
+    // Si no hay translate, probamos con matrices (menos común)
+    if (mT) {
+      const x = parseFloat(mT[1]), y = parseFloat(mT[2]);
+      if (isFinite(x) && isFinite(y)) {
+        // Tomamos centro del viewBox
+        const vb = /viewBox="\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s*"/i.exec(svgText);
+        let vx = 0, vy = 0, vw = 500, vh = 500;
+        if (vb) {
+          vx = parseFloat(vb[1]); vy = parseFloat(vb[2]);
+          vw = parseFloat(vb[3]); vh = parseFloat(vb[4]);
+        } else {
+          const mW = /width="([\d.]+)"/i.exec(svgText);
+          const mH = /height="([\d.]+)"/i.exec(svgText);
+          if (mW) vw = parseFloat(mW[1]);
+          if (mH) vh = parseFloat(mH[1]);
+        }
+        const cx = vx + vw/2;
+        const cy = vy + vh/2;
+        // Ángulo desde el centro al primer signo (en radianes y luego grados)
+        const angRad = Math.atan2(y - cy, x - cx);
+        const angDeg = angRad * 180 / Math.PI;
+        // Ese ángulo normalmente apunta al centro del signo (glyph).
+        // Para pasar de centro a borde necesitamos ±15°. Eso lo hacemos en injectWhiteDividers.
+        return angDeg;
+      }
+    }
+  }
+
+  // 3) Fallback seguro
+  return 0; // sin rotación extra
+}
+
+// ——— Inyecta 12 divisores blancos en el aro externo (alineados a los límites de signo)
+function injectWhiteDividers(svgText) {
+  // viewBox para medidas
   const vb = /viewBox="\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s*"/i.exec(svgText);
   let x = 0, y = 0, w = 500, h = 500;
   if (vb) {
@@ -148,83 +204,35 @@ function getSvgGeom(svgText) {
     if (mW) w = parseFloat(mW[1]);
     if (mH) h = parseFloat(mH[1]);
   }
+
   const cx = x + w / 2;
   const cy = y + h / 2;
   const half = Math.min(w, h) / 2;
-  return { cx, cy, half, w, h };
-}
 
-// Extrae 12 ángulos (en radianes) de los centros de los paths de signos
-function getSignAngles(svgText, cx, cy) {
-  const groupRe = /<g[^>]*id="astrology-radix-signs"[^>]*>([\s\S]*?)<\/g>/i;
-  const mGroup = groupRe.exec(svgText);
-  if (!mGroup) return null;
-
-  const group = mGroup[1];
-  const pathRe = /<path\b[^>]*\sd="([^"]+)"[^>]*>/gi;
-  const angles = [];
-
-  let m;
-  while ((m = pathRe.exec(group))) {
-    const d = m[1];
-    // Tomamos todos los números del "d" y los interpretamos en pares (x,y)
-    const nums = (d.match(/-?\d*\.?\d+(?:e[-+]?\d+)?/gi) || []).map(Number);
-    if (nums.length < 4) continue;
-    // Promediamos pares (x,y) para aproximar centro geométrico
-    let sx = 0, sy = 0, n = 0;
-    for (let i = 0; i + 1 < nums.length; i += 2) {
-      const x = nums[i], y = nums[i+1];
-      if (Number.isFinite(x) && Number.isFinite(y)) {
-        sx += x; sy += y; n++;
-      }
-    }
-    if (n === 0) continue;
-    const mx = sx / n;
-    const my = sy / n;
-    const ang = Math.atan2(my - cy, mx - cx); // [-pi, pi]
-    angles.push(ang);
-  }
-
-  if (angles.length !== 12) return null;
-
-  // Ordenamos de menor a mayor ángulo (sentido antihorario)
-  angles.sort((a, b) => a - b);
-  return angles;
-}
-
-// Inyecta divisores blancos entre signos (mitad entre ángulos de signos)
-function injectDynamicSignDividers(svgText) {
-  const { cx, cy, half } = getSvgGeom(svgText);
-  const signAngles = getSignAngles(svgText, cx, cy);
-  if (!signAngles) {
-    // Fallback: si no pudimos leer signos, no inyectamos nada
-    return svgText;
-  }
-
-  // Radios dentro del aro exterior negro (ajustá si querés)
+  // radios dentro del aro exterior negro
   const r1 = half * 0.82;
   const r2 = half * 0.96;
 
-  // Calculamos 12 ángulos de frontera: punto medio entre cada par adyacente
-  const borders = [];
-  for (let i = 0; i < 12; i++) {
-    const a = signAngles[i];
-    const b = signAngles[(i + 1) % 12];
-    // Promedio angular correcto (maneja wrap-around)
-    let diff = b - a;
-    if (diff < -Math.PI) diff += 2 * Math.PI;
-    if (diff >  Math.PI) diff -= 2 * Math.PI;
-    const mid = a + diff / 2;
-    borders.push(mid);
-  }
+  // Detectar rotación real del anillo de signos:
+  // angCentroSigno = ángulo donde cae el centro de Aries (o del primer signo detectado)
+  const angCentroSigno = detectSignRotationDegrees(svgText);
 
-  const lines = borders.map(ang => {
+  // Para dibujar divisores en los BORDES de cada signo:
+  // si el centro de Aries es angCentroSigno, sus bordes están a ±15°.
+  // El primer borde (0° Aries) = angCentroSigno - 15°.
+  const primerBorde = angCentroSigno - 15;
+
+  const lines = [];
+  for (let i = 0; i < 12; i++) {
+    const ang = (primerBorde + i * 30) * Math.PI / 180; // en rad
     const x1 = cx + r1 * Math.cos(ang);
     const y1 = cy + r1 * Math.sin(ang);
     const x2 = cx + r2 * Math.cos(ang);
     const y2 = cy + r2 * Math.sin(ang);
-    return `<line x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}" />`;
-  });
+    lines.push(
+      `<line x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}" />`
+    );
+  }
 
   const group =
     `<g id="mis-divisores-blancos" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round">${lines.join("")}</g>`;
@@ -232,15 +240,12 @@ function injectDynamicSignDividers(svgText) {
   return svgText.replace(/<\/svg>\s*$/i, `${group}\n</svg>`);
 }
 
-/* =========================
-   Post-proceso del SVG
-   ========================= */
 function tweakSvg(svgText) {
   if (!svgText || typeof svgText !== "string") return svgText;
 
   let out = svgText;
 
-  // 1) Engrosar SOLO líneas de aspectos (rojo/azul/verde): line/path/polyline/polygon, y también en style=
+  // ✅ Engrosar SOLO las líneas de aspectos (rojo/azul/verde) — line/path/polyline/polygon y style=
   const COLORS = ['#ff0000', '#FF0000', '#0000ff', '#0000FF', '#00ff00', '#00FF00'];
   for (const c of COLORS) {
     // con atributo stroke-width
@@ -253,15 +258,15 @@ function tweakSvg(svgText) {
       new RegExp(`(<(?:line|path|polyline|polygon)\\b[^>]*stroke="${c}"(?![^>]*stroke-width)[^>]*)(>)`, "g"),
       `$1 stroke-width="5"$2`
     );
-    // en style="stroke:#ff0000; stroke-width:1"
+    // casos style="stroke:#ff0000; stroke-width:1"
     out = out.replace(
       new RegExp(`(style="[^"]*stroke:${c}[^"]*?stroke-width:)\\s*[^;"]+`, "g"),
       `$1 5`
     );
   }
 
-  // 2) Inyectar divisores de signos dinámicos (blancos)
-  out = injectDynamicSignDividers(out);
+  // 👉 Agregar divisores blancos alineados a signos (dinámico)
+  out = injectWhiteDividers(out);
 
   return out;
 }
@@ -328,7 +333,7 @@ module.exports = async (req, res) => {
         chart_size: 500,
         sign_background: "#000000",   // aro exterior negro
         sign_icon_color: "#FFFFFF",   // íconos de signos blancos
-        planet_icon_color: "#000000", // (color de íconos de planetas en el SVG del proveedor)
+        planet_icon_color: "#000000", // (color de iconos de planetas en el SVG de proveedor)
         inner_circle_background: "#FFFFFF"
       });
 
