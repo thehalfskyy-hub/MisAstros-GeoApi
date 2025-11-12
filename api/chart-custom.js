@@ -14,6 +14,13 @@ const EP_WESTERN_CHART = `${ASTRO_BASE}/natal_wheel_chart`;
 const EP_PLANETS       = `${ASTRO_BASE}/planets/tropical`;
 const EP_HOUSES        = `${ASTRO_BASE}/house_cusps/tropical`;
 
+// ================== CONFIG VISUAL ==================
+const ASPECT_STROKE = 5;   // grosor deseado SOLO para líneas de aspectos (rojo/azul/verde)
+const DIVIDER_SHIFT_DEG = -15; // corrimiento para alinear divisores de signo
+const DIVIDER_R_INNER   = 0.82; // radios relativos del aro (ajustados para chart_size=500)
+const DIVIDER_R_OUTER   = 0.96;
+// ===================================================
+
 // ---------- Helpers ----------
 function setCors(res, origin) {
   if (origin && ALLOWED_ORIGINS.has(origin)) {
@@ -131,10 +138,58 @@ const SIGNO_ES = {
   sagittarius:"Sagitario", capricorn:"Capricornio", aquarius:"Acuario", pisces:"Piscis",
 };
 
-/* =========================
-   Post-proceso del SVG
-   ========================= */
+// ---------- Post-proceso del SVG ----------
+function tweakSvg(svgText) {
+  if (!svgText || typeof svgText !== "string") return svgText;
 
+  let out = svgText;
+
+  // 1) Engrosar SOLO líneas de aspectos (rojo/azul/verde) — robusto para attribute o style
+  const COLORS = ['#ff0000', '#FF0000', '#0000ff', '#0000FF', '#00ff00', '#00FF00'];
+
+  // A) Si el color viene como atributo stroke="..."
+  for (const c of COLORS) {
+    const colorEsc = c.replace('#', '\\#');
+
+    // Reemplaza valor existente de stroke-width
+    out = out.replace(
+      new RegExp(`(<(?:line|path|polyline|polygon)[^>]*stroke="${colorEsc}"[^>]*stroke-width=")(\\d+(?:\\.\\d+)?)(")`, "gi"),
+      `$1${ASPECT_STROKE}$3`
+    );
+
+    // Si no había stroke-width, lo agrega antes de cerrar la etiqueta
+    out = out.replace(
+      new RegExp(`(<(?:line|path|polyline|polygon)[^>]*stroke="${colorEsc}"(?![^>]*stroke-width)[^>]*)(/?>)`, "gi"),
+      `$1 stroke-width="${ASPECT_STROKE}"$2`
+    );
+  }
+
+  // B) Si el color viene dentro de style="... stroke:#ff0000 ... [stroke-width:?] ..."
+  for (const c of COLORS) {
+    const colorEsc = c.replace('#', '\\#');
+
+    // Si ya existe stroke-width dentro del style, lo reemplazamos
+    out = out.replace(
+      new RegExp(`(style="[^"]*stroke\\s*:\\s*${colorEsc}[^"]*?stroke-width\\s*:\\s*)([\\d.]+)`, "gi"),
+      `$1${ASPECT_STROKE}`
+    );
+
+    // Si NO existe stroke-width pero sí stroke:color, lo agregamos al final del style
+    out = out.replace(
+      new RegExp(`(style="[^"]*stroke\\s*:\\s*${colorEsc}[^"]*?)(")`, "gi"),
+      `$1;stroke-width:${ASPECT_STROKE}$2`
+    );
+  }
+
+  // 2) Inyectar divisores blancos en el aro exterior
+  out = injectWhiteDividers(out);
+
+  return out;
+}
+
+function svgToDataUrl(svgText) {
+  return "data:image/svg+xml;utf8," + encodeURIComponent(svgText);
+}
 
 // ——— Inyecta 12 divisores blancos en el aro externo (alineados a los límites de signo)
 function injectWhiteDividers(svgText) {
@@ -154,77 +209,24 @@ function injectWhiteDividers(svgText) {
   const cy = y + h / 2;
   const half = Math.min(w, h) / 2;
 
-  // radios dentro del aro exterior negro
-  const r1 = half * 0.82;
-  const r2 = half * 0.96;
-
-  // 👉 Desfase para alinear exactamente con las fronteras de signo
-  //    Si lo ves 1/2 sector corrido, probá +15 o -15. Aquí uso -15 que suele coincidir.
-  const SHIFT_DEG = +21;
+  const r1 = half * DIVIDER_R_INNER;
+  const r2 = half * DIVIDER_R_OUTER;
 
   const lines = [];
   for (let i = 0; i < 12; i++) {
-    // antes: const ang = (-90 + i * 30) * Math.PI / 180;
-    const ang = (-90 + SHIFT_DEG + i * 30) * Math.PI / 180;
+    const ang = (-90 + DIVIDER_SHIFT_DEG + i * 30) * Math.PI / 180;
     const x1 = cx + r1 * Math.cos(ang);
     const y1 = cy + r1 * Math.sin(ang);
     const x2 = cx + r2 * Math.cos(ang);
     const y2 = cy + r2 * Math.sin(ang);
-    lines.push(
-      `<line x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}" />`
-    );
+    lines.push(`<line x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}" />`);
   }
 
-  const group =
-    `<g id="mis-divisores-blancos" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round">${lines.join("")}</g>`;
-
+  const group = `<g id="mis-divisores-blancos" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round">${lines.join("")}</g>`;
   return svgText.replace(/<\/svg>\s*$/i, `${group}\n</svg>`);
 }
 
-
-
-
-function tweakSvg(svgText) {
-  if (!svgText || typeof svgText !== "string") return svgText;
-
-  let out = svgText;
-
-  // ✅ Engrosar SOLO las líneas de aspectos (rojo/azul/verde) — cubre line/path/polyline/polygon y style=
-const COLORS = ['#ff0000', '#FF0000', '#0000ff', '#0000FF', '#00ff00', '#00FF00'];
-for (const c of COLORS) {
-  // Aumenta grosor en líneas o paths con ese color
-  out = out.replace(
-    new RegExp(`(<(?:line|path|polyline|polygon)[^>]*stroke="${c}"[^>]*stroke-width=")(\\d+(?:\\.\\d+)?)(")`, "gi"),
-    `$15$3` // reemplaza el valor numérico por 5
-  );
-
-  // Si no tiene stroke-width, lo agrega
-  out = out.replace(
-    new RegExp(`(<(?:line|path|polyline|polygon)[^>]*stroke="${c}"(?![^>]*stroke-width)[^>]*)(>)`, "gi"),
-    `$1 stroke-width="5"$2`
-  );
-
-  // También si el grosor viene en un style="stroke-width:1"
-  out = out.replace(
-    new RegExp(`(style="[^"]*stroke:${c}[^"]*?stroke-width:)\\s*[^;"]+`, "gi"),
-    `$1 5`
-  );
-}
-
-
-  // 👉 Agregar divisores blancos en el aro externo
-  out = injectWhiteDividers(out);
-
-  return out;
-}
-
-function svgToDataUrl(svgText) {
-  return "data:image/svg+xml;utf8," + encodeURIComponent(svgText);
-}
-
-/* =========================
-   Handler
-   ========================= */
+// ---------- Handler ----------
 module.exports = async (req, res) => {
   try {
     const origin = req.headers.origin || "";
@@ -280,7 +282,7 @@ module.exports = async (req, res) => {
         chart_size: 500,
         sign_background: "#000000",   // aro exterior negro
         sign_icon_color: "#FFFFFF",   // íconos de signos blancos
-        planet_icon_color: "#000000", // (color de iconos de planetas en el SVG de proveedor)
+        planet_icon_color: "#000000", // íconos de planetas (negro)
         inner_circle_background: "#FFFFFF"
       });
 
