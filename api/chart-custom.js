@@ -135,64 +135,21 @@ const SIGNO_ES = {
    Post-proceso del SVG
    ========================= */
 
-/** Detecta el offset (en grados) del anillo de signos.
- *  1) Intenta leer transform="rotate(A,...)" en el <g id="astrology-radix-signs">.
- *  2) Si no existe, estima ángulo con el primer <g transform="translate(x y)"> del anillo de signos.
- *  Devuelve grados donde 0° es hacia la derecha (eje +X) y -90° apunta hacia arriba (coincide con cómo trazamos).
+/**
+ * Inyecta 12 divisores blancos alineados a límites de signo.
+ * Se calcula la rotación a partir del Ascendente (house1.degree).
+ *
+ * Sistema de ángulos (SVG):
+ *   0° = derecha, 90° = abajo, -90° = arriba, ±180° = izquierda.
+ * El eje del Asc en el SVG del proveedor está en -180° (hacia la izquierda).
+ * Eso significa que el punto de -180° del círculo representa la longitud eclíptica = AscDegree.
+ * Entonces 0° Aries cae en:  -180° - AscDegree   (mod 360)
+ * Y los límites de signo son cada +30° desde ahí.
  */
-function detectSignRotationDegrees(svgText) {
-  // 1) Intento directo: rotate en el grupo de signos
-  const grp = svgText.match(/<g[^>]*id="astrology-radix-signs"[^>]*>/i);
-  if (grp) {
-    const mRot = grp[0].match(/transform="[^"]*rotate\(\s*([-\d.]+)/i);
-    if (mRot) {
-      const deg = parseFloat(mRot[1]);
-      if (isFinite(deg)) return deg;
-    }
-  }
+function injectWhiteDividers(svgText, ascDegreeFloat) {
+  const ascDeg = Number(ascDegreeFloat) || 0;
 
-  // 2) Estimación: primer translate de un hijo de astrology-radix-signs
-  //    Buscamos el bloque del grupo para rastrear hijos
-  const blockMatch = svgText.match(/<g[^>]*id="astrology-radix-signs"[^>]*>([\s\S]*?)<\/g>/i);
-  if (blockMatch) {
-    const block = blockMatch[1];
-    // Primer transform="translate(x y)" que aparezca
-    const mT = block.match(/transform="\s*translate\(\s*([-\d.]+)\s*,\s*([-\d.]+)\s*\)/i);
-    // Si no hay translate, probamos con matrices (menos común)
-    if (mT) {
-      const x = parseFloat(mT[1]), y = parseFloat(mT[2]);
-      if (isFinite(x) && isFinite(y)) {
-        // Tomamos centro del viewBox
-        const vb = /viewBox="\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s*"/i.exec(svgText);
-        let vx = 0, vy = 0, vw = 500, vh = 500;
-        if (vb) {
-          vx = parseFloat(vb[1]); vy = parseFloat(vb[2]);
-          vw = parseFloat(vb[3]); vh = parseFloat(vb[4]);
-        } else {
-          const mW = /width="([\d.]+)"/i.exec(svgText);
-          const mH = /height="([\d.]+)"/i.exec(svgText);
-          if (mW) vw = parseFloat(mW[1]);
-          if (mH) vh = parseFloat(mH[1]);
-        }
-        const cx = vx + vw/2;
-        const cy = vy + vh/2;
-        // Ángulo desde el centro al primer signo (en radianes y luego grados)
-        const angRad = Math.atan2(y - cy, x - cx);
-        const angDeg = angRad * 180 / Math.PI;
-        // Ese ángulo normalmente apunta al centro del signo (glyph).
-        // Para pasar de centro a borde necesitamos ±15°. Eso lo hacemos en injectWhiteDividers.
-        return angDeg;
-      }
-    }
-  }
-
-  // 3) Fallback seguro
-  return 0; // sin rotación extra
-}
-
-// ——— Inyecta 12 divisores blancos en el aro externo (alineados a los límites de signo)
-function injectWhiteDividers(svgText) {
-  // viewBox para medidas
+  // 1) Tamaño/cetro del SVG
   const vb = /viewBox="\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s*"/i.exec(svgText);
   let x = 0, y = 0, w = 500, h = 500;
   if (vb) {
@@ -209,28 +166,29 @@ function injectWhiteDividers(svgText) {
   const cy = y + h / 2;
   const half = Math.min(w, h) / 2;
 
-  // radios dentro del aro exterior negro
-  const r1 = half * 0.82;
-  const r2 = half * 0.96;
+  // 2) Radios del aro exterior donde queremos dibujar (ajustados para chart_size=500)
+  const r1 = half * 0.82;  // inicio del trazo (cerca del anillo de signos)
+  const r2 = half * 0.96;  // borde externo
 
-  // Detectar rotación real del anillo de signos:
-  // angCentroSigno = ángulo donde cae el centro de Aries (o del primer signo detectado)
-  const angCentroSigno = detectSignRotationDegrees(svgText);
+  // 3) Ángulo de 0° Aries en el sistema SVG:
+  //    -180° corresponde al Asc → en ese ángulo la longitud eclíptica es AscDegree.
+  //    Para ir de Asc a 0° Aries: restamos AscDegree.
+  //    Por eso: angAries0 = -180 - AscDegree
+  const angAries0 = -180 - ascDeg;
 
- // 👉 Ajuste fino manual (si necesitás correr los divisores 1 o 2 grados)
-const microOffset = -4; // probá con 1 o -1 si ves que están levemente corridos
+  // (Opcional) microajuste por si el proveedor tiene un leve offset visual en el aro de signos
+  const FUDGE = 0; // en grados; podés ajustar +/−1 si vieras 1px de descalce
+  const base = angAries0 + FUDGE;
 
-// Para dibujar divisores en los BORDES de cada signo:
-// si el centro de Aries es angCentroSigno, sus bordes están a ±15°.
-const primerBorde = angCentroSigno - 15 + microOffset;
-
+  // 4) Construimos las 12 líneas a cada 30°
   const lines = [];
   for (let i = 0; i < 12; i++) {
-    const ang = (primerBorde + i * 30) * Math.PI / 180; // en rad
-    const x1 = cx + r1 * Math.cos(ang);
-    const y1 = cy + r1 * Math.sin(ang);
-    const x2 = cx + r2 * Math.cos(ang);
-    const y2 = cy + r2 * Math.sin(ang);
+    const deg = base + i * 30;
+    const rad = (deg * Math.PI) / 180;
+    const x1 = cx + r1 * Math.cos(rad);
+    const y1 = cy + r1 * Math.sin(rad);
+    const x2 = cx + r2 * Math.cos(rad);
+    const y2 = cy + r2 * Math.sin(rad);
     lines.push(
       `<line x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}" />`
     );
@@ -239,37 +197,43 @@ const primerBorde = angCentroSigno - 15 + microOffset;
   const group =
     `<g id="mis-divisores-blancos" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round">${lines.join("")}</g>`;
 
+  // Inyectamos justo antes del cierre </svg>
   return svgText.replace(/<\/svg>\s*$/i, `${group}\n</svg>`);
 }
 
-function tweakSvg(svgText) {
+/**
+ * (Opcional) Si más adelante querés engrosar SOLO líneas de aspectos (rojo/azul/verde),
+ * podés reactivar este bloque. Por ahora lo dejamos sin tocar otros trazos.
+ */
+function thickenAspectLines(svgText, width = 5) {
   if (!svgText || typeof svgText !== "string") return svgText;
-
   let out = svgText;
-
-  // ✅ Engrosar SOLO las líneas de aspectos (rojo/azul/verde) — line/path/polyline/polygon y style=
   const COLORS = ['#ff0000', '#FF0000', '#0000ff', '#0000FF', '#00ff00', '#00FF00'];
   for (const c of COLORS) {
-    // con atributo stroke-width
     out = out.replace(
       new RegExp(`(<(?:line|path|polyline|polygon)\\b[^>]*stroke="${c}"[^>]*?)\\s+stroke-width="[^"]+"([^>]*>)`, "g"),
-      `$1 stroke-width="5"$2`
+      `$1 stroke-width="${width}"$2`
     );
-    // sin atributo stroke-width
     out = out.replace(
       new RegExp(`(<(?:line|path|polyline|polygon)\\b[^>]*stroke="${c}"(?![^>]*stroke-width)[^>]*)(>)`, "g"),
-      `$1 stroke-width="5"$2`
+      `$1 stroke-width="${width}"$2`
     );
-    // casos style="stroke:#ff0000; stroke-width:1"
     out = out.replace(
       new RegExp(`(style="[^"]*stroke:${c}[^"]*?stroke-width:)\\s*[^;"]+`, "g"),
-      `$1 5`
+      `$1 ${width}`
     );
   }
+  return out;
+}
 
-  // 👉 Agregar divisores blancos alineados a signos (dinámico)
-  out = injectWhiteDividers(out);
-
+/**
+ * Ensambla modificaciones al SVG: ahora solo inyectamos divisores dinámicos.
+ */
+function tweakSvg(svgText, ascDegreeFloat) {
+  let out = svgText;
+  out = injectWhiteDividers(out, ascDegreeFloat);
+  // Si luego querés engrosar aspectos, descomentá la línea:
+  // out = thickenAspectLines(out, 5);
   return out;
 }
 
@@ -325,7 +289,18 @@ module.exports = async (req, res) => {
     const [HH, mm] = time.split(":").map(s => parseInt(s || "0", 10));
     const astroBase = { day: D, month: M, year: Y, hour: HH, min: mm, lat, lon, tzone: timezone };
 
-    // 3) Gráfico — pedimos SVG (aro exterior negro e íconos blancos), luego post-proceso
+    // 1) Pedimos HOUSES para obtener Ascendente (casa 1) y usar su degree
+    let houses = null, house1 = null, ascDegree = 0;
+    try {
+      houses = await astroCall(EP_HOUSES, astroBase);
+      house1 = houses && (houses.houses || houses).find(h => String(h.house) === "1");
+      ascDegree = house1 && house1.degree != null ? Number(house1.degree) : 0;
+    } catch (_) {
+      // Si falla, seguimos con ascDegree=0 (los divisores quedarán alineados asumiendo Asc=0°)
+      ascDegree = 0;
+    }
+
+    // 2) Pedimos el gráfico (SVG) y lo post-procesamos con divisores dinámicos por Asc
     let chartUrl = null;
     let chartError = null;
     try {
@@ -335,7 +310,7 @@ module.exports = async (req, res) => {
         chart_size: 500,
         sign_background: "#000000",   // aro exterior negro
         sign_icon_color: "#FFFFFF",   // íconos de signos blancos
-        planet_icon_color: "#000000", // (color de iconos de planetas en el SVG de proveedor)
+        planet_icon_color: "#000000", // color de íconos de planetas
         inner_circle_background: "#FFFFFF"
       });
 
@@ -346,13 +321,13 @@ module.exports = async (req, res) => {
       if (!svgResp.ok) throw new Error(`Fetch SVG ${svgResp.status}`);
       const rawSvg = await svgResp.text();
 
-      const tweaked = tweakSvg(rawSvg);
+      const tweaked = tweakSvg(rawSvg, ascDegree);
       chartUrl = svgToDataUrl(tweaked);
     } catch (e) {
       chartError = detailFromError(e) || "Fallo al pedir/modificar el gráfico";
     }
 
-    // 4) Planetas
+    // 3) Planetas (para tu UI actual)
     let planetsResp;
     try {
       planetsResp = await astroCall(EP_PLANETS, astroBase);
@@ -371,20 +346,13 @@ module.exports = async (req, res) => {
       ? { sign: moonObj.sign || moonObj.sign_name || moonObj.signName || "", text: moonObj.full_degree ? `Grados: ${moonObj.full_degree}` : "" }
       : { sign: "", text: "" };
 
-    // 5) Ascendente estimado
-    let houses = null, house1 = null;
-    try {
-      houses = await astroCall(EP_HOUSES, astroBase);
-      house1 = houses && (houses.houses || houses).find(h => String(h.house) === "1");
-    } catch (_) {}
-
     const asc = {
       sign: (house1 && (house1.sign_name || house1.sign || house1.signName)) || "",
       text: house1 && house1.degree != null ? `Grados: ${house1.degree}` : "",
       source: houses ? "house_cusps/tropical" : "n/a",
     };
 
-    // 6) Positions + Asc (compat con tu front)
+    // 4) Positions + Asc (compat con tu front)
     const positions = (Array.isArray(planetsResp) ? planetsResp : [])
       .filter(p => p && p.name)
       .map(p => {
@@ -408,7 +376,7 @@ module.exports = async (req, res) => {
       });
     }
 
-    // 7) Respuesta JSON
+    // 5) Respuesta JSON
     res.statusCode = 200;
     res.setHeader("Content-Type", "application/json; charset=utf-8");
     res.end(JSON.stringify({
