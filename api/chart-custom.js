@@ -1,6 +1,5 @@
-// api/chart-custom.js — Vercel Serverless (CommonJS)
-// Overlay: detecta divisores radiales reales (aunque vengan como <path M..L..>) y dibuja arriba líneas blancas.
-// No modifica nada del SVG original.
+// api/chart-custom.js — Vercel Serverless (CommonJS) — Compatible con PLAN STARTER
+// Igual contrato que /api/chart, pero devuelve chartUrl = data:image/svg+xml;utf8,<svg modificado>
 
 const ALLOWED_ORIGINS = new Set([
   "https://misastros.com",
@@ -136,155 +135,168 @@ const SIGNO_ES = {
    Post-proceso del SVG
    ========================= */
 
-// Lee viewBox y medidas
-function getViewBox(svgText) {
-  const vb = /viewBox="\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s*"/i.exec(svgText);
+/**
+ * Extrae viewBox y devuelve {cx, cy, half, w, h}
+ */
+function getSVGGeometry(svgText) {
+  const vb = /viewBox="\s*([\d.+-]+)\s+([\d.+-]+)\s+([\d.+-]+)\s+([\d.+-]+)\s*"/i.exec(svgText);
   let x = 0, y = 0, w = 500, h = 500;
   if (vb) {
     x = parseFloat(vb[1]); y = parseFloat(vb[2]);
     w = parseFloat(vb[3]); h = parseFloat(vb[4]);
   } else {
-    const mW = /width="([\d.]+)"/i.exec(svgText);
-    const mH = /height="([\d.]+)"/i.exec(svgText);
+    const mW = /width="([\d.+-]+)"/i.exec(svgText);
+    const mH = /height="([\d.+-]+)"/i.exec(svgText);
     if (mW) w = parseFloat(mW[1]);
     if (mH) h = parseFloat(mH[1]);
   }
-  return { x, y, w, h, cx: x + w/2, cy: y + h/2, half: Math.min(w,h)/2 };
+  const cx = x + w / 2;
+  const cy = y + h / 2;
+  const half = Math.min(w, h) / 2;
+  return { cx, cy, half, w, h };
 }
 
-function readAttr(attrs, name) {
-  const m = new RegExp(`${name}="([^"]+)"`, "i").exec(attrs);
-  return m ? m[1] : null;
+/**
+ * Intenta leer la posición (x,y) de un <text>…♈︎…</text>
+ * Soporta:
+ *  - x=".." y=".."
+ *  - transform="matrix(a b c d e f)"  -> usa (e,f)
+ *  - transform="translate(e,f)"
+ */
+function readTextXY(textTag) {
+  // x/y directos
+  const xy = /x="([\d.+-]+)".*?y="([\d.+-]+)"/i.exec(textTag);
+  if (xy) return { x: parseFloat(xy[1]), y: parseFloat(xy[2]) };
+
+  // matrix(...)
+  const m = /transform="matrix\(([^)]+)\)"/i.exec(textTag);
+  if (m) {
+    const parts = m[1].split(/[,\s]+/).map(Number);
+    if (parts.length === 6 && parts.every(n => !isNaN(n))) {
+      return { x: parts[4], y: parts[5] };
+    }
+  }
+
+  // translate(...)
+  const t = /transform="translate\(([^)]+)\)"/i.exec(textTag);
+  if (t) {
+    const parts = t[1].split(/[,\s]+/).map(Number);
+    if (parts.length >= 2 && parts.every(n => !isNaN(n))) {
+      return { x: parts[0], y: parts[1] };
+    }
+  }
+
+  return null;
 }
 
-function parseStyle(styleStr) {
-  const out = {};
-  if (!styleStr) return out;
-  styleStr.split(";").forEach(p => {
-    const [k,v] = p.split(":").map(s=>s && s.trim());
-    if (k && v) out[k.toLowerCase()] = v;
-  });
-  return out;
-}
-
-// Extrae segmentos "M x y L x y" de un atributo d de <path> como pares de puntos
-function extractPathLineSegments(d) {
-  if (!d) return [];
-  // Acepta múltiples pares M…L… en el mismo path
-  const segs = [];
-  const re = /M\s*([-\d.]+)[,\s]+([-\d.]+)\s*L\s*([-\d.]+)[,\s]+([-\d.]+)/ig;
+/**
+ * Busca los <text> que contienen símbolos zodiacales ♈ (U+2648) a ♓ (U+2653)
+ * Devuelve lista de ángulos en radianes, centrados en (cx,cy)
+ */
+function detectSignAngles(svgText, cx, cy) {
+  const angles = [];
+  const re = /<text\b[^>]*>([\u2648-\u2653])<\/text>/g; // ♈..♓
   let m;
-  while ((m = re.exec(d))) {
-    const x1 = parseFloat(m[1]), y1 = parseFloat(m[2]);
-    const x2 = parseFloat(m[3]), y2 = parseFloat(m[4]);
-    if ([x1,y1,x2,y2].every(Number.isFinite)) segs.push({ x1, y1, x2, y2 });
+  while ((m = re.exec(svgText)) !== null) {
+    const full = m[0];
+    const xy = readTextXY(full);
+    if (!xy) continue;
+    const ang = Math.atan2(xy.y - cy, xy.x - cx); // -π..π
+    let a = ang;
+    if (a < 0) a += Math.PI * 2; // 0..2π
+    angles.push(a);
   }
-  return segs;
+  return angles;
 }
 
-// Heurística geométrica para decidir si una línea es un divisor radial del aro
-function looksLikeOuterDivider(seg, geom, opts={}) {
-  const { cx, cy, half } = geom;
-  const x1=seg.x1, y1=seg.y1, x2=seg.x2, y2=seg.y2;
+/**
+ * A partir de los ángulos de los signos, crea 12 divisores en las bisectrices
+ * Inserta un <g id="mis-divisores-blancos"> justo antes de </svg>
+ */
+function overlayDividersFromSigns(svgText) {
+  const { cx, cy, half } = getSVGGeometry(svgText);
 
-  const rA = Math.hypot(x1 - cx, y1 - cy);
-  const rB = Math.hypot(x2 - cx, y2 - cy);
-  const length = Math.hypot(x2 - x1, y2 - y1);
+  const signAngles = detectSignAngles(svgText, cx, cy);
+  // Necesitamos al menos 10 para confiar; si no, devolvemos null y que use fallback
+  if (!signAngles || signAngles.length < 10) return null;
 
-  // tolerancias más amplias para cubrir variaciones del proveedor
-  const nearOuter = v => v >= half*0.84 && v <= half*1.04; // toca aro exterior
-  const nearRing  = v => v >= half*0.70 && v <= half*0.95; // llega al anillo de signos
-  const looksRadial = (nearOuter(rA) && nearRing(rB)) || (nearOuter(rB) && nearRing(rA));
-  const longEnough  = length >= half*0.08; // suficientemente larga
+  // Ordenar 0..2π
+  signAngles.sort((a,b)=>a-b);
 
-  return looksRadial && longEnough;
-}
+  // Radios dentro del aro exterior
+  const r1 = half * 0.82;
+  const r2 = half * 0.96;
 
-// Dibuja un overlay blanco encima de los divisores detectados
-function overlayWhiteDividersOnDetected(svgText) {
-  const geom = getViewBox(svgText);
-  const candidates = [];
+  const lines = [];
+  for (let i = 0; i < signAngles.length; i++) {
+    const a = signAngles[i];
+    const b = signAngles[(i+1) % signAngles.length];
+    // mitad de arco (cuidando el wrap)
+    let mid = (a + ((b < a) ? (b + 2*Math.PI) : b)) / 2;
+    if (mid >= 2*Math.PI) mid -= 2*Math.PI;
 
-  // 1) Captura <line .../>
-  svgText.replace(/<line\b([^>]*?)\/>/gi, (whole, attrs) => {
-    const x1 = parseFloat(readAttr(attrs, "x1") || "NaN");
-    const y1 = parseFloat(readAttr(attrs, "y1") || "NaN");
-    const x2 = parseFloat(readAttr(attrs, "x2") || "NaN");
-    const y2 = parseFloat(readAttr(attrs, "y2") || "NaN");
-    if (![x1,y1,x2,y2].every(Number.isFinite)) return whole;
-
-    const style = parseStyle(readAttr(attrs, "style"));
-    const sw = parseFloat(readAttr(attrs, "stroke-width") || style["stroke-width"] || "0.6");
-
-    // si vienen heredadas y no tienen stroke, igual probamos por geometría
-    if (looksLikeOuterDivider({x1,y1,x2,y2}, geom) && (isNaN(sw) || sw <= 1.5)) {
-      candidates.push({x1,y1,x2,y2});
-    }
-    return whole;
-  });
-
-  // 2) Captura segmentos rectos en <path d="M..L..">
-  svgText.replace(/<path\b([^>]*?)\/>/gi, (whole, attrs) => {
-    const d = readAttr(attrs, "d") || "";
-    const style = parseStyle(readAttr(attrs, "style"));
-    const sw = parseFloat(readAttr(attrs, "stroke-width") || style["stroke-width"] || "0.6");
-    const segs = extractPathLineSegments(d);
-    for (const seg of segs) {
-      if (looksLikeOuterDivider(seg, geom) && (isNaN(sw) || sw <= 1.5)) {
-        candidates.push(seg);
-      }
-    }
-    return whole;
-  });
-
-  // 3) También probamos <polyline>/<polygon> con solo 2 puntos (raro pero posible)
-  const polyRe = /<(polyline|polygon)\b([^>]*?)\/>/gi;
-  svgText.replace(polyRe, (whole, tag, attrs) => {
-    const pts = (readAttr(attrs, "points") || "").trim();
-    // formato: "x1,y1 x2,y2"
-    const m = /^\s*([-\d.]+)[,\s]+([-\d.]+)\s+([-\d.]+)[,\s]+([-\d.]+)\s*$/i.exec(pts);
-    if (!m) return whole;
-    const x1=parseFloat(m[1]), y1=parseFloat(m[2]), x2=parseFloat(m[3]), y2=parseFloat(m[4]);
-    if (![x1,y1,x2,y2].every(Number.isFinite)) return whole;
-
-    const style = parseStyle(readAttr(attrs, "style"));
-    const sw = parseFloat(readAttr(attrs, "stroke-width") || style["stroke-width"] || "0.6");
-
-    if (looksLikeOuterDivider({x1,y1,x2,y2}, geom) && (isNaN(sw) || sw <= 1.5)) {
-      candidates.push({x1,y1,x2,y2});
-    }
-    return whole;
-  });
-
-  if (!candidates.length) {
-    // nada detectado → devolvemos tal cual
-    return svgText;
-  }
-
-  // overlay blanco encima (final del SVG)
-  const group =
-    `<g id="mis-divisores-blancos-overlay" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round">` +
-    candidates.map(({x1,y1,x2,y2}) =>
+    const x1 = cx + r1 * Math.cos(mid);
+    const y1 = cy + r1 * Math.sin(mid);
+    const x2 = cx + r2 * Math.cos(mid);
+    const y2 = cy + r2 * Math.sin(mid);
+    lines.push(
       `<line x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}" />`
-    ).join("") +
-    `</g>`;
+    );
+  }
+
+  const group =
+    `<g id="mis-divisores-blancos" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" fill="none">${lines.join("")}</g>`;
 
   return svgText.replace(/<\/svg>\s*$/i, `${group}\n</svg>`);
 }
 
-// (Opcional) Engrosar SOLO líneas de aspectos por color (desactivado por defecto)
-function thickenAspectLines(svgText, width = 5) {
+/**
+ * Fallback: 12 divisores equiespaciados (como tenías).
+ * SHIFT_DEG permite un pequeño ajuste manual si lo ves corrido.
+ */
+function overlayDividersFallback(svgText) {
+  const { cx, cy, half } = getSVGGeometry(svgText);
+  const r1 = half * 0.82;
+  const r2 = half * 0.96;
+  const SHIFT_DEG = 0; // dejalo en 0, ahora no dependemos de asc ni nada
+
+  const lines = [];
+  for (let i = 0; i < 12; i++) {
+    const ang = (-90 + SHIFT_DEG + i * 30) * Math.PI / 180;
+    const x1 = cx + r1 * Math.cos(ang);
+    const y1 = cy + r1 * Math.sin(ang);
+    const x2 = cx + r2 * Math.cos(ang);
+    const y2 = cy + r2 * Math.sin(ang);
+    lines.push(
+      `<line x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}" />`
+    );
+  }
+
+  const group =
+    `<g id="mis-divisores-blancos" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" fill="none">${lines.join("")}</g>`;
+
+  return svgText.replace(/<\/svg>\s*$/i, `${group}\n</svg>`);
+}
+
+/**
+ * Engrosa SOLO las líneas de aspectos (rojo/azul/verde). Dejamos lo demás intacto.
+ * (puede que algunos SVG vengan con style="stroke:#rrggbb; stroke-width:..."; se cubre)
+ */
+function thickenAspectLines(svgText, width = 4) {
   let out = svgText;
   const COLORS = ['#ff0000', '#FF0000', '#0000ff', '#0000FF', '#00ff00', '#00FF00'];
   for (const c of COLORS) {
+    // line/path/polyline/polygon con stroke y stroke-width explícito
     out = out.replace(
       new RegExp(`(<(?:line|path|polyline|polygon)\\b[^>]*stroke="${c}"[^>]*?)\\s+stroke-width="[^"]+"([^>]*>)`, "g"),
       `$1 stroke-width="${width}"$2`
     );
+    // sin stroke-width → lo agregamos
     out = out.replace(
       new RegExp(`(<(?:line|path|polyline|polygon)\\b[^>]*stroke="${c}"(?![^>]*stroke-width)[^>]*)(>)`, "g"),
       `$1 stroke-width="${width}"$2`
     );
+    // style="...stroke:#ff0000; ... stroke-width:1 ..."
     out = out.replace(
       new RegExp(`(style="[^"]*stroke:${c}[^"]*?stroke-width:)\\s*[^;"]+`, "g"),
       `$1 ${width}`
@@ -293,10 +305,26 @@ function thickenAspectLines(svgText, width = 5) {
   return out;
 }
 
+/**
+ * Tweak principal: engrosa aspectos y agrega divisores por detección de signos.
+ */
 function tweakSvg(svgText) {
+  if (!svgText || typeof svgText !== "string") return svgText;
+
   let out = svgText;
-  out = overlayWhiteDividersOnDetected(out);     // ← clona y pinta en blanco los divisores reales
-  // out = thickenAspectLines(out, 5);           // ← si querés engrosar aspectos, activá esto
+
+  // 1) Engrosar SOLO aspectos de color (deja todo lo demás igual)
+  out = thickenAspectLines(out, 5);
+
+  // 2) Intentar overlay de divisores usando posiciones reales de los signos
+  const bySigns = overlayDividersFromSigns(out);
+  if (bySigns) {
+    out = bySigns;
+  } else {
+    // 3) Fallback estable si no encontramos suficientes signos
+    out = overlayDividersFallback(out);
+  }
+
   return out;
 }
 
@@ -312,12 +340,19 @@ module.exports = async (req, res) => {
     const origin = req.headers.origin || "";
     setCors(res, origin);
 
-    if (req.method === "OPTIONS") { res.statusCode = 204; return res.end(); }
-    if (req.method !== "POST") { return bad(res, 405, "Method Not Allowed. Use POST."); }
+    if (req.method === "OPTIONS") {
+      res.statusCode = 204;
+      return res.end();
+    }
+    if (req.method !== "POST") {
+      return bad(res, 405, "Method Not Allowed. Use POST.");
+    }
 
     // Body
     let body = {};
-    try { body = typeof req.body === "string" ? JSON.parse(req.body) : (req.body || {}); } catch {}
+    try {
+      body = typeof req.body === "string" ? JSON.parse(req.body) : (req.body || {});
+    } catch {}
     const { date, time, place } = body;
     if (!date || !time || !place) {
       return bad(res, 400, "Faltan parámetros", { need: ["date", "time", "place"] });
@@ -325,29 +360,37 @@ module.exports = async (req, res) => {
 
     // Geocodificación
     let lat, lon;
-    try { const g = await ocGeocode(place); lat = g.lat; lon = g.lon; }
-    catch (e) { return bad(res, e.status || 400, "Lugar no encontrado o error de geocodificación.", detailFromError(e)); }
+    try {
+      const g = await ocGeocode(place);
+      lat = g.lat; lon = g.lon;
+    } catch (e) {
+      return bad(res, e.status || 400, "Lugar no encontrado o error de geocodificación.", detailFromError(e));
+    }
 
     // Zona horaria
     let timezone = 0, tzSource = "fallback";
-    try { const tz = await googleTimeZone(lat, lon); timezone = tz.tzHours; tzSource = tz.source || "google"; }
-    catch (_) {}
+    try {
+      const tz = await googleTimeZone(lat, lon);
+      timezone = tz.tzHours;
+      tzSource = tz.source || "google";
+    } catch (_) {}
 
     // Base astro
     const [Y, M, D] = date.split("-").map(s => parseInt(s, 10));
     const [HH, mm] = time.split(":").map(s => parseInt(s || "0", 10));
     const astroBase = { day: D, month: M, year: Y, hour: HH, min: mm, lat, lon, tzone: timezone };
 
-    // 3) Gráfico → pedimos SVG y post-procesamos
-    let chartUrl = null, chartError = null;
+    // 3) Gráfico — pedimos SVG (aro exterior negro e íconos blancos), luego post-proceso
+    let chartUrl = null;
+    let chartError = null;
     try {
       const chartResp = await astroCall(EP_WESTERN_CHART, {
         ...astroBase,
         image_type: "svg",
         chart_size: 500,
         sign_background: "#000000",   // aro exterior negro
-        sign_icon_color: "#FFFFFF",   // íconos signos blancos
-        planet_icon_color: "#000000", // (color icons planetas según proveedor)
+        sign_icon_color: "#FFFFFF",   // íconos de signos (del proveedor)
+        planet_icon_color: "#000000", // ojo: este color lo maneja el proveedor internamente
         inner_circle_background: "#FFFFFF"
       });
 
@@ -364,10 +407,13 @@ module.exports = async (req, res) => {
       chartError = detailFromError(e) || "Fallo al pedir/modificar el gráfico";
     }
 
-    // 4) Planetas (para tu front)
+    // 4) Planetas
     let planetsResp;
-    try { planetsResp = await astroCall(EP_PLANETS, astroBase); }
-    catch (e) { return bad(res, e.status || 502, "Error al pedir posiciones a AstrologyAPI.", detailFromError(e)); }
+    try {
+      planetsResp = await astroCall(EP_PLANETS, astroBase);
+    } catch (e) {
+      return bad(res, e.status || 502, "Error al pedir posiciones a AstrologyAPI.", detailFromError(e));
+    }
 
     const sunObj  = (planetsResp || []).find(p => /sun/i.test(p.name || ""));
     const moonObj = (planetsResp || []).find(p => /moon/i.test(p.name || ""));
@@ -380,10 +426,13 @@ module.exports = async (req, res) => {
       ? { sign: moonObj.sign || moonObj.sign_name || moonObj.signName || "", text: moonObj.full_degree ? `Grados: ${moonObj.full_degree}` : "" }
       : { sign: "", text: "" };
 
-    // 5) Ascendente estimado (opcional)
+    // 5) Ascendente estimado
     let houses = null, house1 = null;
-    try { houses = await astroCall(EP_HOUSES, astroBase); house1 = houses && (houses.houses || houses).find(h => String(h.house) === "1"); }
-    catch (_) {}
+    try {
+      houses = await astroCall(EP_HOUSES, astroBase);
+      house1 = houses && (houses.houses || houses).find(h => String(h.house) === "1");
+    } catch (_) {}
+
     const asc = {
       sign: (house1 && (house1.sign_name || house1.sign || house1.signName)) || "",
       text: house1 && house1.degree != null ? `Grados: ${house1.degree}` : "",
