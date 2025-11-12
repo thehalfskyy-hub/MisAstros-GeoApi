@@ -153,19 +153,33 @@ function tweakSvg(svgText) {
   }
 
 
-  // —— Divisores externos entre signos → blanco (heurística segura)
-  // Buscamos <line>/<path> negros y finos (width=1) que además parezcan "ticks"
-  // por tener clase/id alusiva o una rotación típica del aro exterior.
-  out = out.replace(/<(?:line|path)\b[^>]*>/g, (tag) => {
-    const isBlack   = /stroke="#000000"/i.test(tag);
-    const isThin    = /stroke-width="1(\.0+)?"/i.test(tag);   // suelen venir en 1
-    const looksTick = /(class|id)="[^"]*(tick|divider|sign)[^"]*"/i.test(tag)
-                   || /transform="[^"]*rotate\(/i.test(tag);
-    if (isBlack && isThin && looksTick) {
-      return tag.replace(/stroke="#000000"/i, 'stroke="#FFFFFF"'); // ← cambiá color aquí si querés otro
-    }
-    return tag;
-  });
+// —— Divisores externos entre signos → blanco (más robusto)
+// Match: <line>/<path> con stroke negro/gris oscuro Y que parezcan "ticks" del aro
+out = out.replace(/<(?:line|path)\b[^>]*>/g, (tag) => {
+  // negros / grises típicos del proveedor
+  const isDarkStroke =
+    /stroke="(?:#000000|#111111|#1a1a1a|#222222|#2b2b2b|#2f2f2f|#333333|rgb\(0,\s*0,\s*0\))"/i.test(tag);
+
+  // heurísticas para ticks del aro exterior
+  const looksLikeTick =
+    /stroke-dasharray="/i.test(tag) ||                  // suelen ser dash/dot
+    /transform="[^"]*rotate\([^"]*\)"/i.test(tag) ||    // distribuidos radialmente
+    /(class|id)="[^"]*(tick|divider|sign|notch)[^"]*"/i.test(tag);
+
+  // No tocar aspectos de color ni otras líneas internas
+  const isAspectColor =
+    /stroke="(?:#ff0000|#FF0000|#0000ff|#0000FF|#00ff00|#00FF00)"/.test(tag);
+
+  if (isDarkStroke && looksLikeTick && !isAspectColor) {
+    // cambiá el color aquí si querés otro (ej: #CCCCCC)
+    let t = tag.replace(/stroke="[^"]*"/i, 'stroke="#FFFFFF"');
+    // si eran muy finitos, subimos apenas para que se vean sobre fondo negro
+    t = t.replace(/stroke-width="([0-1](?:\.\d+)?)"/i, 'stroke-width="2"');
+    return t;
+  }
+  return tag;
+});
+
 
 
   
