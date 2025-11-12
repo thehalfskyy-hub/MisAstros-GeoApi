@@ -215,7 +215,7 @@ try {
     chart_size: 500,                // tamaño en px (opcional)
     sign_background: "#000000",     // 🔹 aro exterior negro
     sign_icon_color: "#FFFFFF",     // 🔹 íconos de signos en blanco
-    planet_icon_color: "#FFFFFF",   // 🔹 planetas en blanco
+    planet_icon_color: "#000000",   // 🔹 planetas 
     inner_circle_background: "#FFFFFF" // 🔹 fondo interno claro
   });
   chartUrl = normalizeChartUrl(chartResp);
