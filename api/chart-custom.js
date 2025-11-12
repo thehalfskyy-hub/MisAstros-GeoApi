@@ -139,35 +139,50 @@ function tweakSvg(svgText) {
 
   // ✅ SOLO engrosamos las LÍNEAS DE ASPECTOS (rojo/azul/verde). Nada más.
   const COLORS = ['#ff0000', '#FF0000', '#0000ff', '#0000FF', '#00ff00', '#00FF00'];
-  for (const c of COLORS)
+  for (const c of COLORS) {
+    // Reemplazar stroke-width existente
+    out = out.replace(
+      new RegExp(`(<(?:line|path)\\b[^>]*stroke="${c}"[^>]*?)\\s+stroke-width="[^"]+"([^>]*>)`, "g"),
+      `$1 stroke-width="5"$2`
+    );
+    // Si no tiene stroke-width, lo agregamos
+    out = out.replace(
+      new RegExp(`(<(?:line|path)\\b[^>]*stroke="${c}"(?![^>]*stroke-width)[^>]*)(>)`, "g"),
+      `$1 stroke-width="5"$2`
+    );
+  }
 
-  // —— Divisores externos entre signos → blanco (versión robusta)
-  out = out.replace(/<(?:line|path)\b[^>]*>/g, (tag) => {
-    // detecta líneas oscuras (negras o grises)
-    const isDark = /(stroke|fill)="?(#000000|#111111|#222222|#333333|rgb\s*\(0\s*,\s*0\s*,\s*0\))"?/i.test(tag);
-    // evita tocar los aspectos de color
-    const isAspect = /(stroke|fill)="?(#ff0000|#FF0000|#0000ff|#0000FF|#00ff00|#00FF00)"?/i.test(tag);
-    // busca las líneas distribuidas radialmente o finas
-    const looksDivider =
-      /rotate\(/i.test(tag) ||
-      /stroke-dasharray/i.test(tag) ||
-      /(class|id)="[^"]*(divider|tick|sign|radial)[^"]*"/i.test(tag);
 
-    if (isDark && looksDivider && !isAspect) {
-      // cambia el color a blanco puro
-      let t = tag.replace(/stroke="[^"]*"/i, 'stroke="#FFFFFF"');
-      // si eran muy finas (stroke-width < 2), se sube a 2 para que se vean sobre fondo negro
-      t = t.replace(/stroke-width="([0-1](?:\.\d+)?)"/i, 'stroke-width="2"');
-      return t;
-    }
 
-    // también reemplazamos los casos donde no hay stroke explícito
-    if (!/stroke="/i.test(tag) && looksDivider) {
-      return tag.replace(/>$/, ' stroke="#FFFFFF" stroke-width="2">');
-    }
 
-    return tag;
-  });
+  function tweakSvg(svgText) {
+  if (!svgText || typeof svgText !== "string") return svgText;
+  let out = svgText;
+
+  // ✅ SOLO engrosamos las líneas de aspectos (rojo/azul/verde)
+  const COLORS = ['#ff0000', '#FF0000', '#0000ff', '#0000FF', '#00ff00', '#00FF00'];
+  for (const c of COLORS) {
+    out = out.replace(
+      new RegExp(`(<(?:line|path|polyline|polygon)\\b[^>]*stroke="${c}"[^>]*?)\\s+stroke-width="[^"]+"([^>]*>)`, "g"),
+      `$1 stroke-width="5"$2`
+    );
+    out = out.replace(
+      new RegExp(`(<(?:line|path|polyline|polygon)\\b[^>]*stroke="${c}"(?![^>]*stroke-width)[^>]*)(>)`, "g"),
+      `$1 stroke-width="5"$2`
+    );
+    // también si viene en style="stroke:#ff0000; stroke-width:1"
+    out = out.replace(
+      new RegExp(`(style="[^"]*stroke:${c}[^"]*?stroke-width:)\\s*[^;"]+`, "g"),
+      `$1 5`
+    );
+  }
+
+  // 👉 agregamos nuestros divisores blancos por encima del aro negro
+  out = injectWhiteDividers(out);
+
+  return out;
+}
+
 
 
 
@@ -179,6 +194,62 @@ function tweakSvg(svgText) {
 function svgToDataUrl(svgText) {
   return "data:image/svg+xml;utf8," + encodeURIComponent(svgText);
 }
+
+
+
+
+
+
+// ——— Inyecta 12 divisores blancos en el aro externo (no toca nada existente)
+function injectWhiteDividers(svgText) {
+  // viewBox: "0 0 500 500" (suele ser así en chart_size=500)
+  const vb = /viewBox="\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s*"/i.exec(svgText);
+  let x = 0, y = 0, w = 500, h = 500;
+  if (vb) {
+    x = parseFloat(vb[1]); y = parseFloat(vb[2]);
+    w = parseFloat(vb[3]); h = parseFloat(vb[4]);
+  } else {
+    // fallback por si no hay viewBox
+    const mW = /width="([\d.]+)"/i.exec(svgText);
+    const mH = /height="([\d.]+)"/i.exec(svgText);
+    if (mW) w = parseFloat(mW[1]);
+    if (mH) h = parseFloat(mH[1]);
+  }
+
+  const cx = x + w / 2;
+  const cy = y + h / 2;
+  const half = Math.min(w, h) / 2;
+
+  // radios dentro del aro exterior negro (ajustados a ojo para chart_size=500)
+  const r1 = half * 0.82;   // inicio del divisor (cerca del aro de signos)
+  const r2 = half * 0.96;   // borde externo
+  const N  = 12;            // 12 signos
+
+  const lines = [];
+  for (let i = 0; i < N; i++) {
+    const ang = (-90 + i * 30) * Math.PI / 180; // empiezan arriba y cada 30°
+    const x1 = cx + r1 * Math.cos(ang);
+    const y1 = cy + r1 * Math.sin(ang);
+    const x2 = cx + r2 * Math.cos(ang);
+    const y2 = cy + r2 * Math.sin(ang);
+    lines.push(
+      `<line x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}" />`
+    );
+  }
+
+  const group =
+    `<g id="mis-divisores-blancos" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round">${lines.join("")}</g>`;
+
+  // inyectamos justo antes del cierre </svg>
+  return svgText.replace(/<\/svg>\s*$/i, `${group}\n</svg>`);
+}
+
+
+
+
+
+
+
 
 // ---------- Handler ----------
 module.exports = async (req, res) => {
