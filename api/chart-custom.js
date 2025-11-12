@@ -137,40 +137,41 @@ function tweakSvg(svgText) {
 
   let out = svgText;
 
-  // 1) Engrosar TODOS los trazos finos → 3px (aspectos, divisiones, ejes, etc.)
+  // 0) Normalizar números escritos como enteros (1, 2) y decimales chicos → subir grosor
+  //    - Todo lo <= 2.5 lo llevamos a 2.8 (divisiones internas, ejes finos, etc.)
   out = out
-    .replace(/stroke-width="0\.[0-9]+"/g, 'stroke-width="3"')
-    .replace(/stroke-width="1(\.0+)?"/g, 'stroke-width="3"')
-    .replace(/stroke-width="1\.[0-9]+"/g, 'stroke-width="3"')
-    .replace(/stroke-width="2(\.[0-9]+)?"/g, 'stroke-width="3"');
+    .replace(/stroke-width="0\.[0-9]+"/g, 'stroke-width="2.8"')
+    .replace(/stroke-width="1(\.0+)?"/g, 'stroke-width="2.8"')
+    .replace(/stroke-width="1\.[0-9]+"/g, 'stroke-width="2.8"')
+    .replace(/stroke-width="2(\.[0-4])?"/g, 'stroke-width="2.8"');
 
-  // 2) Aspectos (rojo/azul/verde) → asegurar 3px
+  // 1) Aspectos (rojo/azul/verde) → aún más gruesos (3.2)
   const COLORS = ['#ff0000', '#FF0000', '#0000ff', '#0000FF', '#00ff00', '#00FF00'];
   for (const c of COLORS) {
+    // si ya tienen stroke-width, lo reemplazamos; sino lo agregamos
     out = out.replace(
       new RegExp(`(<(?:line|path)\\b[^>]*stroke="${c}"[^>]*?)\\s+stroke-width="[^"]+"([^>]*>)`, "g"),
-      `$1 stroke-width="3"$2`
+      `$1 stroke-width="3.2"$2`
     );
     out = out.replace(
       new RegExp(`(<(?:line|path)\\b[^>]*stroke="${c}"(?![^>]*stroke-width)[^>]*)(>)`, "g"),
-      `$1 stroke-width="3"$2`
+      `$1 stroke-width="3.2"$2`
     );
   }
 
-  // 3) Divisores exteriores entre signos (borde del aro)
-  // Cambiamos líneas negras / grises finas del borde exterior a blancas
+  // 2) Divisores EXTERNOS entre signos: suelen venir en negro/grises y con grosor >= 1
+  //    Cambiamos su stroke a blanco y subimos a 3.0 (sobre aro exterior negro se ve perfecto)
   out = out.replace(
-    /(<(?:line|path)\b[^>]*stroke="#(?:000000|111111|222222|333333)"[^>]*)(>)/g,
-    `$1 stroke="#FFFFFF" stroke-width="3"$2`
+    /(<(?:line|path)\b[^>]*stroke="#(?:000000|111111|222222|333333)"[^>]*stroke-width="(?:1(?:\.\d+)?|2(?:\.\d+)?)"[^>]*)(>)/g,
+    `$1 stroke="#FFFFFF" stroke-width="3.0"$2`
   );
 
-  // 4) Asegurar que no haya líneas invisibles por debajo del negro
-  // (en caso de duplicados superpuestos)
-  out = out.replace(/stroke="#000000"/g, 'stroke="#FFFFFF"');
+  // 3) Seguridad: si quedaron trazos negros importantes en el aro, blanquearlos
+  //    (sin tocar los textos porque no llevan stroke, sólo fill).
+  out = out.replace(/(<(?:line|path)\b[^>]*stroke="#000000"[^>]*)(>)/g, `$1 stroke="#FFFFFF"$2`);
 
   return out;
 }
-
 
 function svgToDataUrl(svgText) {
   return "data:image/svg+xml;utf8," + encodeURIComponent(svgText);
@@ -231,8 +232,8 @@ module.exports = async (req, res) => {
         image_type: "svg",
         chart_size: 500,
         sign_background: "#000000",   // aro exterior negro
-        sign_icon_color: "#FFFFFF",   // íconos blanco
-        planet_icon_color: "#000000", // planetas blanco
+        sign_icon_color: "#FFFFFF",   // íconos de signos en blanco
+        planet_icon_color: "#FFFFFF", // planetas en blanco (contraste)
         inner_circle_background: "#FFFFFF"
       });
 
@@ -258,7 +259,7 @@ module.exports = async (req, res) => {
     }
 
     const sunObj  = (planetsResp || []).find(p => /sun/i.test(p.name || ""));
-    const moonObj = (planetsResp || []).find(p => /moon/i.test(p.name || ""));
+    the moonObj = (planetsResp || []).find(p => /moon/i.test(p.name || ""));
 
     const sun = sunObj
       ? { sign: sunObj.sign || sunObj.sign_name || sunObj.signName || "", text: sunObj.full_degree ? `Grados: ${sunObj.full_degree}` : "" }
