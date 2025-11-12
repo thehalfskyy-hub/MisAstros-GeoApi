@@ -152,11 +152,21 @@ function tweakSvg(svgText) {
     );
   }
 
-// Divisores externos entre signos a blanco
-  out = out.replace(
-    /(<(?:line|path)[^>]*stroke="#(?:000000|111111|222222|333333)"[^>]*)(>)/g,
-    `$1 stroke="#FFFFFF" stroke-width="3"$2`
-  );
+
+  // —— Divisores externos entre signos → blanco (heurística segura)
+  // Buscamos <line>/<path> negros y finos (width=1) que además parezcan "ticks"
+  // por tener clase/id alusiva o una rotación típica del aro exterior.
+  out = out.replace(/<(?:line|path)\b[^>]*>/g, (tag) => {
+    const isBlack   = /stroke="#000000"/i.test(tag);
+    const isThin    = /stroke-width="1(\.0+)?"/i.test(tag);   // suelen venir en 1
+    const looksTick = /(class|id)="[^"]*(tick|divider|sign)[^"]*"/i.test(tag)
+                   || /transform="[^"]*rotate\(/i.test(tag);
+    if (isBlack && isThin && looksTick) {
+      return tag.replace(/stroke="#000000"/i, 'stroke="#FFFFFF"'); // ← cambiá color aquí si querés otro
+    }
+    return tag;
+  });
+
 
   
   // No tocamos ningún otro trazo para conservar grosores originales.
