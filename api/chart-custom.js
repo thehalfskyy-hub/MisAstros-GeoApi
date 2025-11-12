@@ -131,141 +131,48 @@ const SIGNO_ES = {
   sagittarius:"Sagitario", capricorn:"Capricornio", aquarius:"Acuario", pisces:"Piscis",
 };
 
-/* =========================
-   Post-proceso del SVG
-   ========================= */
+// ========= util: índice de signo (ES/EN) → 0..11, Aries=0
+const SIGN_INDEX = {
+  aries:0, tauro:1, taurus:1, geminis:2, gemini:2, géminis:2, cancer:3, cáncer:3, cancerus:3,
+  leo:4, virgo:5, libra:6, escorpio:7, scorpio:7, sagitario:8, sagittarius:8,
+  capricornio:9, capricorn:9, acuario:10, aquarius:10, piscis:11, pisces:11
+};
 
-/**
- * Extrae viewBox y devuelve {cx, cy, half, w, h}
- */
-function getSVGGeometry(svgText) {
-  const vb = /viewBox="\s*([\d.+-]+)\s+([\d.+-]+)\s+([\d.+-]+)\s+([\d.+-]+)\s*"/i.exec(svgText);
+// ——— Inyecta 12 divisores blancos usando la rotación real del zodíaco
+function injectWhiteDividers(svgText, ascLongitudeDeg) {
+  // viewBox
+  const vb = /viewBox="\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s*"/i.exec(svgText);
   let x = 0, y = 0, w = 500, h = 500;
   if (vb) {
     x = parseFloat(vb[1]); y = parseFloat(vb[2]);
     w = parseFloat(vb[3]); h = parseFloat(vb[4]);
   } else {
-    const mW = /width="([\d.+-]+)"/i.exec(svgText);
-    const mH = /height="([\d.+-]+)"/i.exec(svgText);
+    const mW = /width="([\d.]+)"/i.exec(svgText);
+    const mH = /height="([\d.]+)"/i.exec(svgText);
     if (mW) w = parseFloat(mW[1]);
     if (mH) h = parseFloat(mH[1]);
   }
+
   const cx = x + w / 2;
   const cy = y + h / 2;
   const half = Math.min(w, h) / 2;
-  return { cx, cy, half, w, h };
-}
 
-/**
- * Intenta leer la posición (x,y) de un <text>…♈︎…</text>
- * Soporta:
- *  - x=".." y=".."
- *  - transform="matrix(a b c d e f)"  -> usa (e,f)
- *  - transform="translate(e,f)"
- */
-function readTextXY(textTag) {
-  // x/y directos
-  const xy = /x="([\d.+-]+)".*?y="([\d.+-]+)"/i.exec(textTag);
-  if (xy) return { x: parseFloat(xy[1]), y: parseFloat(xy[2]) };
-
-  // matrix(...)
-  const m = /transform="matrix\(([^)]+)\)"/i.exec(textTag);
-  if (m) {
-    const parts = m[1].split(/[,\s]+/).map(Number);
-    if (parts.length === 6 && parts.every(n => !isNaN(n))) {
-      return { x: parts[4], y: parts[5] };
-    }
-  }
-
-  // translate(...)
-  const t = /transform="translate\(([^)]+)\)"/i.exec(textTag);
-  if (t) {
-    const parts = t[1].split(/[,\s]+/).map(Number);
-    if (parts.length >= 2 && parts.every(n => !isNaN(n))) {
-      return { x: parts[0], y: parts[1] };
-    }
-  }
-
-  return null;
-}
-
-/**
- * Busca los <text> que contienen símbolos zodiacales ♈ (U+2648) a ♓ (U+2653)
- * Devuelve lista de ángulos en radianes, centrados en (cx,cy)
- */
-function detectSignAngles(svgText, cx, cy) {
-  const angles = [];
-  const re = /<text\b[^>]*>([\u2648-\u2653])<\/text>/g; // ♈..♓
-  let m;
-  while ((m = re.exec(svgText)) !== null) {
-    const full = m[0];
-    const xy = readTextXY(full);
-    if (!xy) continue;
-    const ang = Math.atan2(xy.y - cy, xy.x - cx); // -π..π
-    let a = ang;
-    if (a < 0) a += Math.PI * 2; // 0..2π
-    angles.push(a);
-  }
-  return angles;
-}
-
-/**
- * A partir de los ángulos de los signos, crea 12 divisores en las bisectrices
- * Inserta un <g id="mis-divisores-blancos"> justo antes de </svg>
- */
-function overlayDividersFromSigns(svgText) {
-  const { cx, cy, half } = getSVGGeometry(svgText);
-
-  const signAngles = detectSignAngles(svgText, cx, cy);
-  // Necesitamos al menos 10 para confiar; si no, devolvemos null y que use fallback
-  if (!signAngles || signAngles.length < 10) return null;
-
-  // Ordenar 0..2π
-  signAngles.sort((a,b)=>a-b);
-
-  // Radios dentro del aro exterior
+  // radios dentro del aro exterior negro
   const r1 = half * 0.82;
   const r2 = half * 0.96;
 
-  const lines = [];
-  for (let i = 0; i < signAngles.length; i++) {
-    const a = signAngles[i];
-    const b = signAngles[(i+1) % signAngles.length];
-    // mitad de arco (cuidando el wrap)
-    let mid = (a + ((b < a) ? (b + 2*Math.PI) : b)) / 2;
-    if (mid >= 2*Math.PI) mid -= 2*Math.PI;
-mid += 15 * Math.PI / 180; // mueve los divisores 15° en sentido horario
-
-    
-
-    const x1 = cx + r1 * Math.cos(mid);
-    const y1 = cy + r1 * Math.sin(mid);
-    const x2 = cx + r2 * Math.cos(mid);
-    const y2 = cy + r2 * Math.sin(mid);
-    lines.push(
-      `<line x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}" />`
-    );
-  }
-
-  const group =
-    `<g id="mis-divisores-blancos" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" fill="none">${lines.join("")}</g>`;
-
-  return svgText.replace(/<\/svg>\s*$/i, `${group}\n</svg>`);
-}
-
-/**
- * Fallback: 12 divisores equiespaciados (como tenías).
- * SHIFT_DEG permite un pequeño ajuste manual si lo ves corrido.
- */
-function overlayDividersFallback(svgText) {
-  const { cx, cy, half } = getSVGGeometry(svgText);
-  const r1 = half * 0.82;
-  const r2 = half * 0.96;
-  const SHIFT_DEG = 0; // dejalo en 0, ahora no dependemos de asc ni nada
+  // Geometría de pantalla:
+  // - El Ascendente se dibuja a la izquierda (≈ 180° en pantalla).
+  // - screenAngle(L) = 180° - (L - ascLongitudeDeg)
+  // Nuestro generador usa ángulos: -90 + SHIFT + i*30 para los 12 divisores (i=0 → Aries 0°).
+  // Queremos que i=0 caiga exactamente en screenAngle(0°).
+  // => -90 + SHIFT = 180 - (0 - ascLon) = 180 + ascLon  →  SHIFT = 270 + ascLon (mod 360)
+  const SHIFT = (270 + ascLongitudeDeg) % 360;
 
   const lines = [];
   for (let i = 0; i < 12; i++) {
-    const ang = (-90 + SHIFT_DEG + i * 30) * Math.PI / 180;
+    const angDeg = -90 + SHIFT + i * 30;           // posición del límite de signo i
+    const ang = (angDeg * Math.PI) / 180;
     const x1 = cx + r1 * Math.cos(ang);
     const y1 = cy + r1 * Math.sin(ang);
     const x2 = cx + r2 * Math.cos(ang);
@@ -276,58 +183,35 @@ function overlayDividersFallback(svgText) {
   }
 
   const group =
-    `<g id="mis-divisores-blancos" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" fill="none">${lines.join("")}</g>`;
+    `<g id="mis-divisores-blancos" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round">${lines.join("")}</g>`;
 
+  // Insertar antes de </svg>
   return svgText.replace(/<\/svg>\s*$/i, `${group}\n</svg>`);
 }
 
-/**
- * Engrosa SOLO las líneas de aspectos (rojo/azul/verde). Dejamos lo demás intacto.
- * (puede que algunos SVG vengan con style="stroke:#rrggbb; stroke-width:..."; se cubre)
- */
-function thickenAspectLines(svgText, width = 4) {
+// ——— Engrosar SOLO las líneas de aspectos (rojo/azul/verde)
+function thickenAspects(svgText, px = 5) {
+  if (!svgText || typeof svgText !== "string") return svgText;
   let out = svgText;
   const COLORS = ['#ff0000', '#FF0000', '#0000ff', '#0000FF', '#00ff00', '#00FF00'];
+
   for (const c of COLORS) {
-    // line/path/polyline/polygon con stroke y stroke-width explícito
+    // atributo stroke + stroke-width
     out = out.replace(
       new RegExp(`(<(?:line|path|polyline|polygon)\\b[^>]*stroke="${c}"[^>]*?)\\s+stroke-width="[^"]+"([^>]*>)`, "g"),
-      `$1 stroke-width="${width}"$2`
+      `$1 stroke-width="${px}"$2`
     );
-    // sin stroke-width → lo agregamos
+    // atributo stroke sin stroke-width
     out = out.replace(
       new RegExp(`(<(?:line|path|polyline|polygon)\\b[^>]*stroke="${c}"(?![^>]*stroke-width)[^>]*)(>)`, "g"),
-      `$1 stroke-width="${width}"$2`
+      `$1 stroke-width="${px}"$2`
     );
-    // style="...stroke:#ff0000; ... stroke-width:1 ..."
+    // style="stroke:#ff0000; stroke-width:1"
     out = out.replace(
       new RegExp(`(style="[^"]*stroke:${c}[^"]*?stroke-width:)\\s*[^;"]+`, "g"),
-      `$1 ${width}`
+      `$1 ${px}`
     );
   }
-  return out;
-}
-
-/**
- * Tweak principal: engrosa aspectos y agrega divisores por detección de signos.
- */
-function tweakSvg(svgText) {
-  if (!svgText || typeof svgText !== "string") return svgText;
-
-  let out = svgText;
-
-  // 1) Engrosar SOLO aspectos de color (deja todo lo demás igual)
-  out = thickenAspectLines(out, 5);
-
-  // 2) Intentar overlay de divisores usando posiciones reales de los signos
-  const bySigns = overlayDividersFromSigns(out);
-  if (bySigns) {
-    out = bySigns;
-  } else {
-    // 3) Fallback estable si no encontramos suficientes signos
-    out = overlayDividersFallback(out);
-  }
-
   return out;
 }
 
@@ -383,7 +267,23 @@ module.exports = async (req, res) => {
     const [HH, mm] = time.split(":").map(s => parseInt(s || "0", 10));
     const astroBase = { day: D, month: M, year: Y, hour: HH, min: mm, lat, lon, tzone: timezone };
 
-    // 3) Gráfico — pedimos SVG (aro exterior negro e íconos blancos), luego post-proceso
+    // 1) Casas para obtener Ascendente (signo + grado)
+    let houses = null, house1 = null;
+    try {
+      houses = await astroCall(EP_HOUSES, astroBase);
+      house1 = houses && (houses.houses || houses).find(h => String(h.house) === "1");
+    } catch (_) {}
+
+    // Calcular longitud eclíptica del Asc (0..360)
+    let ascLongitude = 0;
+    let ascSignText = (house1 && (house1.sign_name || house1.sign || house1.signName)) || "";
+    const ascDeg = (house1 && typeof house1.degree === "number") ? house1.degree : 0;
+    if (ascSignText) {
+      const idx = SIGN_INDEX[String(ascSignText).toLowerCase()] ?? 0;
+      ascLongitude = (idx * 30 + ascDeg) % 360;
+    }
+
+    // 2) Gráfico — pedimos SVG
     let chartUrl = null;
     let chartError = null;
     try {
@@ -392,8 +292,8 @@ module.exports = async (req, res) => {
         image_type: "svg",
         chart_size: 500,
         sign_background: "#000000",   // aro exterior negro
-        sign_icon_color: "#FFFFFF",   // íconos de signos (del proveedor)
-        planet_icon_color: "#000000", // ojo: este color lo maneja el proveedor internamente
+        sign_icon_color: "#FFFFFF",   // íconos de signos blancos
+        planet_icon_color: "#000000", // (color de iconos de planetas en el SVG del proveedor)
         inner_circle_background: "#FFFFFF"
       });
 
@@ -402,15 +302,20 @@ module.exports = async (req, res) => {
 
       const svgResp = await fetch(svgUrl);
       if (!svgResp.ok) throw new Error(`Fetch SVG ${svgResp.status}`);
-      const rawSvg = await svgResp.text();
+      let rawSvg = await svgResp.text();
 
-      const tweaked = tweakSvg(rawSvg);
+      // 2.a Engrosar SOLO aspectos
+      rawSvg = thickenAspects(rawSvg, 5);
+
+      // 2.b Inyectar divisores BLANCOS alineados a signos (rotación por Asc real)
+      const tweaked = injectWhiteDividers(rawSvg, ascLongitude);
+
       chartUrl = svgToDataUrl(tweaked);
     } catch (e) {
       chartError = detailFromError(e) || "Fallo al pedir/modificar el gráfico";
     }
 
-    // 4) Planetas
+    // 3) Planetas
     let planetsResp;
     try {
       planetsResp = await astroCall(EP_PLANETS, astroBase);
@@ -429,20 +334,13 @@ module.exports = async (req, res) => {
       ? { sign: moonObj.sign || moonObj.sign_name || moonObj.signName || "", text: moonObj.full_degree ? `Grados: ${moonObj.full_degree}` : "" }
       : { sign: "", text: "" };
 
-    // 5) Ascendente estimado
-    let houses = null, house1 = null;
-    try {
-      houses = await astroCall(EP_HOUSES, astroBase);
-      house1 = houses && (houses.houses || houses).find(h => String(h.house) === "1");
-    } catch (_) {}
-
     const asc = {
-      sign: (house1 && (house1.sign_name || house1.sign || house1.signName)) || "",
-      text: house1 && house1.degree != null ? `Grados: ${house1.degree}` : "",
+      sign: ascSignText || "",
+      text: (house1 && typeof house1.degree === "number") ? `Grados: ${house1.degree}` : "",
       source: houses ? "house_cusps/tropical" : "n/a",
     };
 
-    // 6) Positions + Asc (compat con tu front)
+    // 4) Positions + Asc (compat con tu front)
     const positions = (Array.isArray(planetsResp) ? planetsResp : [])
       .filter(p => p && p.name)
       .map(p => {
@@ -461,12 +359,12 @@ module.exports = async (req, res) => {
         key: "asc",
         name: "Ascendente",
         sign: SIGNO_ES[ascSignKey] || asc.sign,
-        degMin: house1 && house1.degree != null ? toDegMin(house1.degree) : "",
+        degMin: (house1 && typeof house1.degree === "number") ? toDegMin(house1.degree) : "",
         retro: false
       });
     }
 
-    // 7) Respuesta JSON
+    // 5) Respuesta JSON
     res.statusCode = 200;
     res.setHeader("Content-Type", "application/json; charset=utf-8");
     res.end(JSON.stringify({
