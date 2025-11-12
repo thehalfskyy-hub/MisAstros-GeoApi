@@ -132,11 +132,11 @@ const SIGNO_ES = {
 };
 
 /* =========================
-   Post-proceso del SVG
+   Utilidades SVG (dinámico)
    ========================= */
 
-// ——— Inyecta 12 divisores blancos en el aro externo (alineados a los límites de signo)
-function injectWhiteDividers(svgText) {
+// Obtiene centro y radio desde viewBox / width/height
+function getSvgGeom(svgText) {
   const vb = /viewBox="\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s*"/i.exec(svgText);
   let x = 0, y = 0, w = 500, h = 500;
   if (vb) {
@@ -148,31 +148,83 @@ function injectWhiteDividers(svgText) {
     if (mW) w = parseFloat(mW[1]);
     if (mH) h = parseFloat(mH[1]);
   }
-
   const cx = x + w / 2;
   const cy = y + h / 2;
   const half = Math.min(w, h) / 2;
+  return { cx, cy, half, w, h };
+}
 
-  // radios dentro del aro exterior negro
+// Extrae 12 ángulos (en radianes) de los centros de los paths de signos
+function getSignAngles(svgText, cx, cy) {
+  const groupRe = /<g[^>]*id="astrology-radix-signs"[^>]*>([\s\S]*?)<\/g>/i;
+  const mGroup = groupRe.exec(svgText);
+  if (!mGroup) return null;
+
+  const group = mGroup[1];
+  const pathRe = /<path\b[^>]*\sd="([^"]+)"[^>]*>/gi;
+  const angles = [];
+
+  let m;
+  while ((m = pathRe.exec(group))) {
+    const d = m[1];
+    // Tomamos todos los números del "d" y los interpretamos en pares (x,y)
+    const nums = (d.match(/-?\d*\.?\d+(?:e[-+]?\d+)?/gi) || []).map(Number);
+    if (nums.length < 4) continue;
+    // Promediamos pares (x,y) para aproximar centro geométrico
+    let sx = 0, sy = 0, n = 0;
+    for (let i = 0; i + 1 < nums.length; i += 2) {
+      const x = nums[i], y = nums[i+1];
+      if (Number.isFinite(x) && Number.isFinite(y)) {
+        sx += x; sy += y; n++;
+      }
+    }
+    if (n === 0) continue;
+    const mx = sx / n;
+    const my = sy / n;
+    const ang = Math.atan2(my - cy, mx - cx); // [-pi, pi]
+    angles.push(ang);
+  }
+
+  if (angles.length !== 12) return null;
+
+  // Ordenamos de menor a mayor ángulo (sentido antihorario)
+  angles.sort((a, b) => a - b);
+  return angles;
+}
+
+// Inyecta divisores blancos entre signos (mitad entre ángulos de signos)
+function injectDynamicSignDividers(svgText) {
+  const { cx, cy, half } = getSvgGeom(svgText);
+  const signAngles = getSignAngles(svgText, cx, cy);
+  if (!signAngles) {
+    // Fallback: si no pudimos leer signos, no inyectamos nada
+    return svgText;
+  }
+
+  // Radios dentro del aro exterior negro (ajustá si querés)
   const r1 = half * 0.82;
   const r2 = half * 0.96;
 
-  // 👉 Desfase para alinear exactamente con las fronteras de signo
-  //    Si lo ves 1/2 sector corrido, probá +15 o -15. Aquí uso -15 que suele coincidir.
-  const SHIFT_DEG = +20;
-
-  const lines = [];
+  // Calculamos 12 ángulos de frontera: punto medio entre cada par adyacente
+  const borders = [];
   for (let i = 0; i < 12; i++) {
-    // antes: const ang = (-90 + i * 30) * Math.PI / 180;
-    const ang = (-90 + SHIFT_DEG + i * 30) * Math.PI / 180;
+    const a = signAngles[i];
+    const b = signAngles[(i + 1) % 12];
+    // Promedio angular correcto (maneja wrap-around)
+    let diff = b - a;
+    if (diff < -Math.PI) diff += 2 * Math.PI;
+    if (diff >  Math.PI) diff -= 2 * Math.PI;
+    const mid = a + diff / 2;
+    borders.push(mid);
+  }
+
+  const lines = borders.map(ang => {
     const x1 = cx + r1 * Math.cos(ang);
     const y1 = cy + r1 * Math.sin(ang);
     const x2 = cx + r2 * Math.cos(ang);
     const y2 = cy + r2 * Math.sin(ang);
-    lines.push(
-      `<line x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}" />`
-    );
-  }
+    return `<line x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}" />`;
+  });
 
   const group =
     `<g id="mis-divisores-blancos" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round">${lines.join("")}</g>`;
@@ -180,13 +232,15 @@ function injectWhiteDividers(svgText) {
   return svgText.replace(/<\/svg>\s*$/i, `${group}\n</svg>`);
 }
 
-
+/* =========================
+   Post-proceso del SVG
+   ========================= */
 function tweakSvg(svgText) {
   if (!svgText || typeof svgText !== "string") return svgText;
 
   let out = svgText;
 
-  // ✅ Engrosar SOLO las líneas de aspectos (rojo/azul/verde) — cubre line/path/polyline/polygon y style=
+  // 1) Engrosar SOLO líneas de aspectos (rojo/azul/verde): line/path/polyline/polygon, y también en style=
   const COLORS = ['#ff0000', '#FF0000', '#0000ff', '#0000FF', '#00ff00', '#00FF00'];
   for (const c of COLORS) {
     // con atributo stroke-width
@@ -199,15 +253,15 @@ function tweakSvg(svgText) {
       new RegExp(`(<(?:line|path|polyline|polygon)\\b[^>]*stroke="${c}"(?![^>]*stroke-width)[^>]*)(>)`, "g"),
       `$1 stroke-width="5"$2`
     );
-    // casos style="stroke:#ff0000; stroke-width:1"
+    // en style="stroke:#ff0000; stroke-width:1"
     out = out.replace(
       new RegExp(`(style="[^"]*stroke:${c}[^"]*?stroke-width:)\\s*[^;"]+`, "g"),
       `$1 5`
     );
   }
 
-  // 👉 Agregar divisores blancos en el aro externo
-  out = injectWhiteDividers(out);
+  // 2) Inyectar divisores de signos dinámicos (blancos)
+  out = injectDynamicSignDividers(out);
 
   return out;
 }
@@ -274,7 +328,7 @@ module.exports = async (req, res) => {
         chart_size: 500,
         sign_background: "#000000",   // aro exterior negro
         sign_icon_color: "#FFFFFF",   // íconos de signos blancos
-        planet_icon_color: "#000000", // (color de iconos de planetas en el SVG de proveedor)
+        planet_icon_color: "#000000", // (color de íconos de planetas en el SVG del proveedor)
         inner_circle_background: "#FFFFFF"
       });
 
