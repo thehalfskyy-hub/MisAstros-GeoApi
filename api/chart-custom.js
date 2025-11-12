@@ -153,32 +153,33 @@ function tweakSvg(svgText) {
   }
 
 
-// —— Divisores externos entre signos → blanco (más robusto)
-// Match: <line>/<path> con stroke negro/gris oscuro Y que parezcan "ticks" del aro
-out = out.replace(/<(?:line|path)\b[^>]*>/g, (tag) => {
-  // negros / grises típicos del proveedor
-  const isDarkStroke =
-    /stroke="(?:#000000|#111111|#1a1a1a|#222222|#2b2b2b|#2f2f2f|#333333|rgb\(0,\s*0,\s*0\))"/i.test(tag);
+  // —— Divisores externos entre signos → blanco (versión robusta)
+  out = out.replace(/<(?:line|path)\b[^>]*>/g, (tag) => {
+    // detecta líneas oscuras (negras o grises)
+    const isDark = /(stroke|fill)="?(#000000|#111111|#222222|#333333|rgb\s*\(0\s*,\s*0\s*,\s*0\))"?/i.test(tag);
+    // evita tocar los aspectos de color
+    const isAspect = /(stroke|fill)="?(#ff0000|#FF0000|#0000ff|#0000FF|#00ff00|#00FF00)"?/i.test(tag);
+    // busca las líneas distribuidas radialmente o finas
+    const looksDivider =
+      /rotate\(/i.test(tag) ||
+      /stroke-dasharray/i.test(tag) ||
+      /(class|id)="[^"]*(divider|tick|sign|radial)[^"]*"/i.test(tag);
 
-  // heurísticas para ticks del aro exterior
-  const looksLikeTick =
-    /stroke-dasharray="/i.test(tag) ||                  // suelen ser dash/dot
-    /transform="[^"]*rotate\([^"]*\)"/i.test(tag) ||    // distribuidos radialmente
-    /(class|id)="[^"]*(tick|divider|sign|notch)[^"]*"/i.test(tag);
+    if (isDark && looksDivider && !isAspect) {
+      // cambia el color a blanco puro
+      let t = tag.replace(/stroke="[^"]*"/i, 'stroke="#FFFFFF"');
+      // si eran muy finas (stroke-width < 2), se sube a 2 para que se vean sobre fondo negro
+      t = t.replace(/stroke-width="([0-1](?:\.\d+)?)"/i, 'stroke-width="2"');
+      return t;
+    }
 
-  // No tocar aspectos de color ni otras líneas internas
-  const isAspectColor =
-    /stroke="(?:#ff0000|#FF0000|#0000ff|#0000FF|#00ff00|#00FF00)"/.test(tag);
+    // también reemplazamos los casos donde no hay stroke explícito
+    if (!/stroke="/i.test(tag) && looksDivider) {
+      return tag.replace(/>$/, ' stroke="#FFFFFF" stroke-width="2">');
+    }
 
-  if (isDarkStroke && looksLikeTick && !isAspectColor) {
-    // cambiá el color aquí si querés otro (ej: #CCCCCC)
-    let t = tag.replace(/stroke="[^"]*"/i, 'stroke="#FFFFFF"');
-    // si eran muy finitos, subimos apenas para que se vean sobre fondo negro
-    t = t.replace(/stroke-width="([0-1](?:\.\d+)?)"/i, 'stroke-width="2"');
-    return t;
-  }
-  return tag;
-});
+    return tag;
+  });
 
 
 
