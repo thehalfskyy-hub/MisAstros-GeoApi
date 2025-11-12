@@ -190,24 +190,27 @@ function tweakSvg(svgText) {
   let out = svgText;
 
   // ✅ Engrosar SOLO las líneas de aspectos (rojo/azul/verde) — cubre line/path/polyline/polygon y style=
-  const COLORS = ['#ff0000', '#FF0000', '#0000ff', '#0000FF', '#00ff00', '#00FF00'];
-  for (const c of COLORS) {
-    // con atributo stroke-width
-    out = out.replace(
-      new RegExp(`(<(?:line|path|polyline|polygon)\\b[^>]*stroke="${c}"[^>]*?)\\s+stroke-width="[^"]+"([^>]*>)`, "g"),
-      `$1 stroke-width="5"$2`
-    );
-    // sin atributo stroke-width
-    out = out.replace(
-      new RegExp(`(<(?:line|path|polyline|polygon)\\b[^>]*stroke="${c}"(?![^>]*stroke-width)[^>]*)(>)`, "g"),
-      `$1 stroke-width="5"$2`
-    );
-    // casos style="stroke:#ff0000; stroke-width:1"
-    out = out.replace(
-      new RegExp(`(style="[^"]*stroke:${c}[^"]*?stroke-width:)\\s*[^;"]+`, "g"),
-      `$1 5`
-    );
-  }
+const COLORS = ['#ff0000', '#FF0000', '#0000ff', '#0000FF', '#00ff00', '#00FF00'];
+for (const c of COLORS) {
+  // Aumenta grosor en líneas o paths con ese color
+  out = out.replace(
+    new RegExp(`(<(?:line|path|polyline|polygon)[^>]*stroke="${c}"[^>]*stroke-width=")(\\d+(?:\\.\\d+)?)(")`, "gi"),
+    `$15$3` // reemplaza el valor numérico por 5
+  );
+
+  // Si no tiene stroke-width, lo agrega
+  out = out.replace(
+    new RegExp(`(<(?:line|path|polyline|polygon)[^>]*stroke="${c}"(?![^>]*stroke-width)[^>]*)(>)`, "gi"),
+    `$1 stroke-width="5"$2`
+  );
+
+  // También si el grosor viene en un style="stroke-width:1"
+  out = out.replace(
+    new RegExp(`(style="[^"]*stroke:${c}[^"]*?stroke-width:)\\s*[^;"]+`, "gi"),
+    `$1 5`
+  );
+}
+
 
   // 👉 Agregar divisores blancos en el aro externo
   out = injectWhiteDividers(out);
