@@ -160,7 +160,7 @@ function injectWhiteDividers(svgText) {
 
   // 👉 Desfase para alinear exactamente con las fronteras de signo
   //    Si lo ves 1/2 sector corrido, probá +15 o -15. Aquí uso -15 que suele coincidir.
-  const SHIFT_DEG = +30;
+  const SHIFT_DEG = +15;
 
   const lines = [];
   for (let i = 0; i < 12; i++) {
