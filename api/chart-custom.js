@@ -365,5 +365,3 @@ module.exports = async (req, res) => {
     return bad(res, status, err?.message || "Error interno del servidor", detailFromError(err));
   }
 };
-message.txt
-13 KB
