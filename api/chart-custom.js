@@ -138,13 +138,13 @@ function tweakSvg(svgText) {
   let out = svgText;
 
   // 1) Engrosar trazos pequeños (0.4–1.0) → +0.6 aprox
-  out = out.replace(/stroke-width="0\.4"/g, 'stroke-width="1.0"');
-  out = out.replace(/stroke-width="0\.5"/g, 'stroke-width="1.2"');
-  out = out.replace(/stroke-width="0\.6"/g, 'stroke-width="1.3"');
-  out = out.replace(/stroke-width="0\.7"/g, 'stroke-width="1.3"');
-  out = out.replace(/stroke-width="0\.8"/g, 'stroke-width="1.35"');
-  out = out.replace(/stroke-width="0\.9"/g, 'stroke-width="1.4"');
-  out = out.replace(/stroke-width="1"/g,     'stroke-width="1.6"');
+  out = out.replace(/stroke-width="0\.4"/g, 'stroke-width="2"');
+  out = out.replace(/stroke-width="0\.5"/g, 'stroke-width="2"');
+  out = out.replace(/stroke-width="0\.6"/g, 'stroke-width="2"');
+  out = out.replace(/stroke-width="0\.7"/g, 'stroke-width=""');
+  out = out.replace(/stroke-width="0\.8"/g, 'stroke-width="2"');
+  out = out.replace(/stroke-width="0\.9"/g, 'stroke-width="2"');
+  out = out.replace(/stroke-width="1"/g,     'stroke-width="2"');
 
   // 2) Aspectos típicos (rojo/azul/verde) → asegurar 1.4
   const COLORS = ['#ff0000', '#FF0000', '#0000ff', '#0000FF', '#00ff00', '#00FF00'];
@@ -228,7 +228,7 @@ module.exports = async (req, res) => {
         ...astroBase,
         image_type: "svg",
         chart_size: 500,
-        sign_background: "#FFFFFF",   // aro exterior negro
+        sign_background: "#000000",   // aro exterior negro
         sign_icon_color: "#FFFFFF",   // íconos blanco
         planet_icon_color: "#FFFFFF", // planetas blanco
         inner_circle_background: "#FFFFFF"
