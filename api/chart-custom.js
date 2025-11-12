@@ -152,6 +152,13 @@ function tweakSvg(svgText) {
     );
   }
 
+// Divisores externos entre signos a blanco
+  out = out.replace(
+    /(<(?:line|path)[^>]*stroke="#(?:000000|111111|222222|333333)"[^>]*)(>)/g,
+    `$1 stroke="#FFFFFF" stroke-width="3"$2`
+  );
+
+  
   // No tocamos ningún otro trazo para conservar grosores originales.
   return out;
 }
