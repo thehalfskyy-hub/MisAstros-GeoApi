@@ -228,7 +228,7 @@ module.exports = async (req, res) => {
         ...astroBase,
         image_type: "svg",
         chart_size: 500,
-        sign_background: "#000000",   // aro exterior negro
+        sign_background: "#FFFFFF",   // aro exterior negro
         sign_icon_color: "#FFFFFF",   // íconos blanco
         planet_icon_color: "#FFFFFF", // planetas blanco
         inner_circle_background: "#FFFFFF"
