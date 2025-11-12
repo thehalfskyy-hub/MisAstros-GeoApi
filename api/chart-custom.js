@@ -137,6 +137,7 @@ const SIGNO_ES = {
 
 // ——— Inyecta 12 divisores blancos en el aro externo (alineados a los límites de signo)
 function injectWhiteDividers(svgText) {
+  // 1. Buscar viewBox para calcular centro
   const vb = /viewBox="\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s*"/i.exec(svgText);
   let x = 0, y = 0, w = 500, h = 500;
   if (vb) {
@@ -153,30 +154,26 @@ function injectWhiteDividers(svgText) {
   const cy = y + h / 2;
   const half = Math.min(w, h) / 2;
 
-  // radios dentro del aro exterior negro
   const r1 = half * 0.82;
   const r2 = half * 0.96;
 
-  // 👉 Desfase para alinear exactamente con las fronteras de signo
-  //    Si lo ves 1/2 sector corrido, probá +15 o -15. Aquí uso -15 que suele coincidir.
-  const SHIFT_DEG = +20;
+  // 2. Buscar rotación del aro zodiacal
+  const rotMatch = /<g[^>]*id="signs"[^>]*transform="rotate\(([-\d.]+)/i.exec(svgText);
+  const ROT_BASE = rotMatch ? parseFloat(rotMatch[1]) : -90; // fallback si no se encuentra
+  const N = 12;
 
+  // 3. Crear divisores con esa rotación base
   const lines = [];
-  for (let i = 0; i < 12; i++) {
-    // antes: const ang = (-90 + i * 30) * Math.PI / 180;
-    const ang = (-90 + SHIFT_DEG + i * 30) * Math.PI / 180;
+  for (let i = 0; i < N; i++) {
+    const ang = (ROT_BASE + i * 30) * Math.PI / 180;
     const x1 = cx + r1 * Math.cos(ang);
     const y1 = cy + r1 * Math.sin(ang);
     const x2 = cx + r2 * Math.cos(ang);
     const y2 = cy + r2 * Math.sin(ang);
-    lines.push(
-      `<line x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}" />`
-    );
+    lines.push(`<line x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}" />`);
   }
 
-  const group =
-    `<g id="mis-divisores-blancos" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round">${lines.join("")}</g>`;
-
+  const group = `<g id="mis-divisores-blancos" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round">${lines.join("")}</g>`;
   return svgText.replace(/<\/svg>\s*$/i, `${group}\n</svg>`);
 }
 
