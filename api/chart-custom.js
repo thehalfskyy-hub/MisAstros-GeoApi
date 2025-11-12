@@ -1,5 +1,6 @@
-// api/chart-custom.js — Vercel Serverless (CommonJS) — Compatible con PLAN STARTER
-// Igual contrato que /api/chart, pero devuelve chartUrl = data:image/svg+xml;utf8,<svg modificado>
+// api/chart-custom.js — Vercel Serverless (CommonJS)
+// Versión que detecta y recolorea los divisores reales del SVG a blanco.
+// ✅ Funciona igual en todas las ruedas (no depende del Ascendente ni del signo Aries).
 
 const ALLOWED_ORIGINS = new Set([
   "https://misastros.com",
@@ -135,76 +136,100 @@ const SIGNO_ES = {
    Post-proceso del SVG
    ========================= */
 
-/**
- * Inyecta 12 divisores blancos alineados a límites de signo.
- * Se calcula la rotación a partir del Ascendente (house1.degree).
- *
- * Sistema de ángulos (SVG):
- *   0° = derecha, 90° = abajo, -90° = arriba, ±180° = izquierda.
- * El eje del Asc en el SVG del proveedor está en -180° (hacia la izquierda).
- * Eso significa que el punto de -180° del círculo representa la longitud eclíptica = AscDegree.
- * Entonces 0° Aries cae en:  -180° - AscDegree   (mod 360)
- * Y los límites de signo son cada +30° desde ahí.
- */
-function injectWhiteDividers(svgText, ascDegreeFloat) {
-  const ascDeg = Number(ascDegreeFloat) || 0;
+// --- Detecta y recolorea los divisores reales del aro de signos ---
+function recolorExistingSignDividers(svgText) {
+  if (!svgText || typeof svgText !== "string") return svgText;
 
-  // 1) Tamaño/cetro del SVG
   const vb = /viewBox="\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s*"/i.exec(svgText);
   let x = 0, y = 0, w = 500, h = 500;
   if (vb) {
     x = parseFloat(vb[1]); y = parseFloat(vb[2]);
     w = parseFloat(vb[3]); h = parseFloat(vb[4]);
-  } else {
-    const mW = /width="([\d.]+)"/i.exec(svgText);
-    const mH = /height="([\d.]+)"/i.exec(svgText);
-    if (mW) w = parseFloat(mW[1]);
-    if (mH) h = parseFloat(mH[1]);
   }
-
   const cx = x + w / 2;
   const cy = y + h / 2;
   const half = Math.min(w, h) / 2;
 
-  // 2) Radios del aro exterior donde queremos dibujar (ajustados para chart_size=500)
-  const r1 = half * 0.82;  // inicio del trazo (cerca del anillo de signos)
-  const r2 = half * 0.96;  // borde externo
+  const LINE_RE = /<line\b([^>]*?)\/>/gi;
+  const readAttr = (s, name) => {
+    const m = new RegExp(`${name}="([^"]+)"`, "i").exec(s);
+    return m ? m[1] : null;
+  };
 
-  // 3) Ángulo de 0° Aries en el sistema SVG:
-  //    -180° corresponde al Asc → en ese ángulo la longitud eclíptica es AscDegree.
-  //    Para ir de Asc a 0° Aries: restamos AscDegree.
-  //    Por eso: angAries0 = -180 - AscDegree
-  const angAries0 = -180 - ascDeg;
-
-  // (Opcional) microajuste por si el proveedor tiene un leve offset visual en el aro de signos
-  const FUDGE = 0; // en grados; podés ajustar +/−1 si vieras 1px de descalce
-  const base = angAries0 + FUDGE;
-
-  // 4) Construimos las 12 líneas a cada 30°
-  const lines = [];
-  for (let i = 0; i < 12; i++) {
-    const deg = base + i * 30;
-    const rad = (deg * Math.PI) / 180;
-    const x1 = cx + r1 * Math.cos(rad);
-    const y1 = cy + r1 * Math.sin(rad);
-    const x2 = cx + r2 * Math.cos(rad);
-    const y2 = cy + r2 * Math.sin(rad);
-    lines.push(
-      `<line x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}" />`
+  const isDarkGrey = (stroke) => {
+    if (!stroke) return false;
+    const s = stroke.toLowerCase().replace(/\s/g, "");
+    return (
+      s === "#000" || s === "#000000" ||
+      /^#([1-5][0-9a-f]){3}$/i.test(s) ||
+      s === "#111111" || s === "#222222" || s === "#333333" ||
+      s === "#444444" || s === "#555555" || s === "#666666" ||
+      s === "black" || s.startsWith("rgba(0,0,0") || s.startsWith("rgb(0,0,0")
     );
-  }
+  };
 
-  const group =
-    `<g id="mis-divisores-blancos" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round">${lines.join("")}</g>`;
+  const replaceOne = (whole, attrs) => {
+    const x1 = parseFloat(readAttr(attrs, "x1") || "NaN");
+    const y1 = parseFloat(readAttr(attrs, "y1") || "NaN");
+    const x2 = parseFloat(readAttr(attrs, "x2") || "NaN");
+    const y2 = parseFloat(readAttr(attrs, "y2") || "NaN");
+    if (![x1, y1, x2, y2].every(Number.isFinite)) return whole;
 
-  // Inyectamos justo antes del cierre </svg>
-  return svgText.replace(/<\/svg>\s*$/i, `${group}\n</svg>`);
+    const rA = Math.hypot(x1 - cx, y1 - cy);
+    const rB = Math.hypot(x2 - cx, y2 - cy);
+    const length = Math.hypot(x2 - x1, y2 - y1);
+    const stroke = readAttr(attrs, "stroke");
+    let sw = parseFloat(readAttr(attrs, "stroke-width") || "0.6");
+    const style = readAttr(attrs, "style") || "";
+
+    let styleStroke = null, styleWidth = null;
+    const mStroke = /stroke:\s*([^;"]+)/i.exec(style);
+    if (mStroke) styleStroke = mStroke[1].trim();
+    const mWidth = /stroke-width:\s*([0-9.]+)/i.exec(style);
+    if (mWidth) styleWidth = parseFloat(mWidth[1]);
+
+    const effStroke = (stroke || styleStroke || "").trim();
+    const effWidth  = Number.isFinite(styleWidth) ? styleWidth : sw;
+
+    const nearOuter = (v) => v >= half * 0.90 && v <= half * 1.02;
+    const nearRing  = (v) => v >= half * 0.78 && v <= half * 0.98;
+    const looksRadial =
+      (nearOuter(rA) && nearRing(rB)) || (nearOuter(rB) && nearRing(rA));
+    const longEnough = length >= half * 0.12;
+    const thinStroke = !Number.isFinite(effWidth) || effWidth <= 1.2;
+
+    if (looksRadial && longEnough && thinStroke && isDarkGrey(effStroke)) {
+      let newAttrs = attrs;
+      newAttrs = newAttrs.replace(/stroke:\s*[^;"]+;?/gi, "");
+      newAttrs = newAttrs.replace(/stroke-width:\s*[^;"]+;?/gi, "");
+
+      if (/stroke="/i.test(newAttrs)) {
+        newAttrs = newAttrs.replace(/stroke="[^"]*"/i, 'stroke="#FFFFFF"');
+      } else {
+        newAttrs += ' stroke="#FFFFFF"';
+      }
+      if (/stroke-width="/i.test(newAttrs)) {
+        newAttrs = newAttrs.replace(/stroke-width="[^"]*"/i, 'stroke-width="2"');
+      } else {
+        newAttrs += ' stroke-width="2"';
+      }
+      if (/stroke-linecap="/i.test(newAttrs)) {
+        newAttrs = newAttrs.replace(/stroke-linecap="[^"]*"/i, 'stroke-linecap="round"');
+      } else {
+        newAttrs += ' stroke-linecap="round"';
+      }
+      newAttrs = newAttrs.replace(/\sstyle="\s*;?\s*"/i, "");
+
+      return `<line ${newAttrs.trim()} />`;
+    }
+
+    return whole;
+  };
+
+  return svgText.replace(LINE_RE, replaceOne);
 }
 
-/**
- * (Opcional) Si más adelante querés engrosar SOLO líneas de aspectos (rojo/azul/verde),
- * podés reactivar este bloque. Por ahora lo dejamos sin tocar otros trazos.
- */
+// --- Engrosar solo las líneas de aspectos (opcional) ---
 function thickenAspectLines(svgText, width = 5) {
   if (!svgText || typeof svgText !== "string") return svgText;
   let out = svgText;
@@ -226,14 +251,11 @@ function thickenAspectLines(svgText, width = 5) {
   return out;
 }
 
-/**
- * Ensambla modificaciones al SVG: ahora solo inyectamos divisores dinámicos.
- */
-function tweakSvg(svgText, ascDegreeFloat) {
+// --- Función principal de ajuste del SVG ---
+function tweakSvg(svgText) {
   let out = svgText;
-  out = injectWhiteDividers(out, ascDegreeFloat);
-  // Si luego querés engrosar aspectos, descomentá la línea:
-  // out = thickenAspectLines(out, 5);
+  out = recolorExistingSignDividers(out); // 🔥 recolorea los divisores reales
+  // out = thickenAspectLines(out, 5); // ← activá esto si querés engrosar los aspectos
   return out;
 }
 
@@ -242,7 +264,7 @@ function svgToDataUrl(svgText) {
 }
 
 /* =========================
-   Handler
+   Handler principal
    ========================= */
 module.exports = async (req, res) => {
   try {
@@ -257,7 +279,6 @@ module.exports = async (req, res) => {
       return bad(res, 405, "Method Not Allowed. Use POST.");
     }
 
-    // Body
     let body = {};
     try {
       body = typeof req.body === "string" ? JSON.parse(req.body) : (req.body || {});
@@ -267,40 +288,16 @@ module.exports = async (req, res) => {
       return bad(res, 400, "Faltan parámetros", { need: ["date", "time", "place"] });
     }
 
-    // Geocodificación
-    let lat, lon;
-    try {
-      const g = await ocGeocode(place);
-      lat = g.lat; lon = g.lon;
-    } catch (e) {
-      return bad(res, e.status || 400, "Lugar no encontrado o error de geocodificación.", detailFromError(e));
-    }
+    const g = await ocGeocode(place);
+    const { lat, lon } = g;
 
-    // Zona horaria
-    let timezone = 0, tzSource = "fallback";
-    try {
-      const tz = await googleTimeZone(lat, lon);
-      timezone = tz.tzHours;
-      tzSource = tz.source || "google";
-    } catch (_) {}
-
-    // Base astro
+    const tz = await googleTimeZone(lat, lon);
+    const timezone = tz.tzHours;
     const [Y, M, D] = date.split("-").map(s => parseInt(s, 10));
     const [HH, mm] = time.split(":").map(s => parseInt(s || "0", 10));
     const astroBase = { day: D, month: M, year: Y, hour: HH, min: mm, lat, lon, tzone: timezone };
 
-    // 1) Pedimos HOUSES para obtener Ascendente (casa 1) y usar su degree
-    let houses = null, house1 = null, ascDegree = 0;
-    try {
-      houses = await astroCall(EP_HOUSES, astroBase);
-      house1 = houses && (houses.houses || houses).find(h => String(h.house) === "1");
-      ascDegree = house1 && house1.degree != null ? Number(house1.degree) : 0;
-    } catch (_) {
-      // Si falla, seguimos con ascDegree=0 (los divisores quedarán alineados asumiendo Asc=0°)
-      ascDegree = 0;
-    }
-
-    // 2) Pedimos el gráfico (SVG) y lo post-procesamos con divisores dinámicos por Asc
+    // Gráfico principal (SVG)
     let chartUrl = null;
     let chartError = null;
     try {
@@ -308,85 +305,41 @@ module.exports = async (req, res) => {
         ...astroBase,
         image_type: "svg",
         chart_size: 500,
-        sign_background: "#000000",   // aro exterior negro
-        sign_icon_color: "#FFFFFF",   // íconos de signos blancos
-        planet_icon_color: "#000000", // color de íconos de planetas
+        sign_background: "#000000",
+        sign_icon_color: "#FFFFFF",
+        planet_icon_color: "#000000",
         inner_circle_background: "#FFFFFF"
       });
 
-      const svgUrl = chartResp.chart_url || chartResp.chartUrl || chartResp.svg_url || chartResp.svgUrl || null;
-      if (!svgUrl) throw new Error("No se recibió URL de SVG del proveedor");
-
+      const svgUrl = chartResp.chart_url || chartResp.chartUrl || chartResp.svg_url || chartResp.svgUrl;
       const svgResp = await fetch(svgUrl);
-      if (!svgResp.ok) throw new Error(`Fetch SVG ${svgResp.status}`);
       const rawSvg = await svgResp.text();
-
-      const tweaked = tweakSvg(rawSvg, ascDegree);
+      const tweaked = tweakSvg(rawSvg);
       chartUrl = svgToDataUrl(tweaked);
     } catch (e) {
       chartError = detailFromError(e) || "Fallo al pedir/modificar el gráfico";
     }
 
-    // 3) Planetas (para tu UI actual)
-    let planetsResp;
-    try {
-      planetsResp = await astroCall(EP_PLANETS, astroBase);
-    } catch (e) {
-      return bad(res, e.status || 502, "Error al pedir posiciones a AstrologyAPI.", detailFromError(e));
-    }
-
-    const sunObj  = (planetsResp || []).find(p => /sun/i.test(p.name || ""));
-    const moonObj = (planetsResp || []).find(p => /moon/i.test(p.name || ""));
+    // Planetas (para tu front)
+    const planetsResp = await astroCall(EP_PLANETS, astroBase);
+    const sunObj = planetsResp.find(p => /sun/i.test(p.name || ""));
+    const moonObj = planetsResp.find(p => /moon/i.test(p.name || ""));
 
     const sun = sunObj
-      ? { sign: sunObj.sign || sunObj.sign_name || sunObj.signName || "", text: sunObj.full_degree ? `Grados: ${sunObj.full_degree}` : "" }
+      ? { sign: sunObj.sign, text: `Grados: ${sunObj.full_degree}` }
       : { sign: "", text: "" };
-
     const moon = moonObj
-      ? { sign: moonObj.sign || moonObj.sign_name || moonObj.signName || "", text: moonObj.full_degree ? `Grados: ${moonObj.full_degree}` : "" }
+      ? { sign: moonObj.sign, text: `Grados: ${moonObj.full_degree}` }
       : { sign: "", text: "" };
 
-    const asc = {
-      sign: (house1 && (house1.sign_name || house1.sign || house1.signName)) || "",
-      text: house1 && house1.degree != null ? `Grados: ${house1.degree}` : "",
-      source: houses ? "house_cusps/tropical" : "n/a",
-    };
-
-    // 4) Positions + Asc (compat con tu front)
-    const positions = (Array.isArray(planetsResp) ? planetsResp : [])
-      .filter(p => p && p.name)
-      .map(p => {
-        const key = String(p.name || "").toLowerCase();
-        const name = NOMBRE_ES[key] || p.name;
-        const signKey = String(p.sign || p.sign_name || "").toLowerCase();
-        const sign = SIGNO_ES[signKey] || (p.sign || p.sign_name || "");
-        const retro = !!(p.retro || p.is_retro || p.is_retrograde);
-        const degMin = p.full_degree != null ? toDegMin(p.full_degree) : "";
-        return { key, name, sign, degMin, retro };
-      });
-
-    if (asc.sign) {
-      const ascSignKey = String(asc.sign).toLowerCase();
-      positions.push({
-        key: "asc",
-        name: "Ascendente",
-        sign: SIGNO_ES[ascSignKey] || asc.sign,
-        degMin: house1 && house1.degree != null ? toDegMin(house1.degree) : "",
-        retro: false
-      });
-    }
-
-    // 5) Respuesta JSON
     res.statusCode = 200;
     res.setHeader("Content-Type", "application/json; charset=utf-8");
     res.end(JSON.stringify({
       chartUrl,
       sun,
       moon,
-      asc,
-      positions,
       errors: { chart: chartError },
-      meta: { lat, lon, timezone, tzSource }
+      meta: { lat, lon, timezone }
     }, null, 2));
 
   } catch (err) {
