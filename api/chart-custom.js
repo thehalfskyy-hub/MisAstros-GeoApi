@@ -143,12 +143,12 @@ function tweakSvg(svgText) {
     // Reemplazar stroke-width existente
     out = out.replace(
       new RegExp(`(<(?:line|path)\\b[^>]*stroke="${c}"[^>]*?)\\s+stroke-width="[^"]+"([^>]*>)`, "g"),
-      `$1 stroke-width="3"$2`
+      `$1 stroke-width="5"$2`
     );
     // Si no tiene stroke-width, lo agregamos
     out = out.replace(
       new RegExp(`(<(?:line|path)\\b[^>]*stroke="${c}"(?![^>]*stroke-width)[^>]*)(>)`, "g"),
-      `$1 stroke-width="3"$2`
+      `$1 stroke-width="5"$2`
     );
   }
 
@@ -216,7 +216,7 @@ module.exports = async (req, res) => {
         chart_size: 500,
         sign_background: "#000000",   // aro exterior negro
         sign_icon_color: "#FFFFFF",   // íconos de signos blancos
-        planet_icon_color: "#FFFFFF", // íconos de planetas blancos
+        planet_icon_color: "#000000", // íconos de planetas blancos
         inner_circle_background: "#FFFFFF"
       });
 
