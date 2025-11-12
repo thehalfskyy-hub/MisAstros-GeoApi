@@ -204,16 +204,25 @@ module.exports = async (req, res) => {
       tzone: timezone,
     };
 
-    // 3) Gráfico (SVG/PNG) — natal_wheel_chart (Starter)
-    // ----- FALLO SUAVE: si falla el gráfico, seguimos con posiciones y devolvemos errors.chart -----
-    let chartUrl = null;
-    let chartError = null;
-    try {
-      const chartResp = await astroCall(EP_WESTERN_CHART, astroBase);
-      chartUrl = normalizeChartUrl(chartResp);
-    } catch (e) {
-      chartError = detailFromError(e) || "Fallo al pedir el gráfico a AstrologyAPI";
-    }
+// 3) Gráfico (SVG/PNG) — natal_wheel_chart (Starter)
+let chartUrl = null;
+let chartError = null;
+try {
+  const chartResp = await astroCall(EP_WESTERN_CHART, {
+    ...astroBase,
+    // === PERSONALIZACIÓN DE ESTILO ===
+    image_type: "png",              // formato de salida (podés usar "svg" si preferís vector)
+    chart_size: 500,                // tamaño en px (opcional)
+    sign_background: "#000000",     // 🔹 aro exterior negro
+    sign_icon_color: "#FFFFFF",     // 🔹 íconos de signos en blanco
+    planet_icon_color: "#FFFFFF",   // 🔹 planetas en blanco
+    inner_circle_background: "#FFFFFF" // 🔹 fondo interno claro
+  });
+  chartUrl = normalizeChartUrl(chartResp);
+} catch (e) {
+  chartError = detailFromError(e) || "Fallo al pedir el gráfico a AstrologyAPI";
+}
+
 
     // 4) Planetas — planets/tropical (trae Sol, Luna y resto)
     let planetsResp;
