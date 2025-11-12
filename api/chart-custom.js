@@ -218,7 +218,7 @@ function injectWhiteDividers(svgText) {
   const angCentroSigno = detectSignRotationDegrees(svgText);
 
  // 👉 Ajuste fino manual (si necesitás correr los divisores 1 o 2 grados)
-const microOffset = -8; // probá con 1 o -1 si ves que están levemente corridos
+const microOffset = -4; // probá con 1 o -1 si ves que están levemente corridos
 
 // Para dibujar divisores en los BORDES de cada signo:
 // si el centro de Aries es angCentroSigno, sus bordes están a ±15°.
