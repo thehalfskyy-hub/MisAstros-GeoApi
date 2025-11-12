@@ -11,8 +11,8 @@ const ALLOWED_ORIGINS = new Set([
 
 const ASTRO_BASE = "https://json.astrologyapi.com/v1";
 const EP_WESTERN_CHART = `${ASTRO_BASE}/natal_wheel_chart`;
-const EP_PLANETS = `${ASTRO_BASE}/planets/tropical`;
-const EP_HOUSES = `${ASTRO_BASE}/house_cusps/tropical`;
+const EP_PLANETS       = `${ASTRO_BASE}/planets/tropical`;
+const EP_HOUSES        = `${ASTRO_BASE}/house_cusps/tropical`;
 
 // ---------- Helpers ----------
 function setCors(res, origin) {
@@ -122,31 +122,13 @@ function toDegMin(fullDegree) {
 }
 
 const NOMBRE_ES = {
-  sun: "Sol",
-  moon: "Luna",
-  mercury: "Mercurio",
-  venus: "Venus",
-  mars: "Marte",
-  jupiter: "Júpiter",
-  saturn: "Saturno",
-  uranus: "Urano",
-  neptune: "Neptuno",
-  pluto: "Plutón",
+  sun: "Sol", moon: "Luna", mercury: "Mercurio", venus: "Venus", mars: "Marte",
+  jupiter: "Júpiter", saturn: "Saturno", uranus: "Urano", neptune: "Neptuno", pluto: "Plutón",
 };
-
 const SIGNO_ES = {
-  aries: "Aries",
-  taurus: "Tauro",
-  gemini: "Géminis",
-  cancer: "Cáncer",
-  leo: "Leo",
-  virgo: "Virgo",
-  libra: "Libra",
-  scorpio: "Escorpio",
-  sagittarius: "Sagitario",
-  capricorn: "Capricornio",
-  aquarius: "Acuario",
-  pisces: "Piscis",
+  aries:"Aries", taurus:"Tauro", gemini:"Géminis", cancer:"Cáncer",
+  leo:"Leo", virgo:"Virgo", libra:"Libra", scorpio:"Escorpio",
+  sagittarius:"Sagitario", capricorn:"Capricornio", aquarius:"Acuario", pisces:"Piscis",
 };
 
 // ---------- Post-proceso del SVG ----------
@@ -155,27 +137,22 @@ function tweakSvg(svgText) {
 
   let out = svgText;
 
-  // Engrosar trazos finos
-  out = out
-    .replace(/stroke-width="0\.[0-9]+"/g, 'stroke-width="3"')
-    .replace(/stroke-width="1(\.[0-9]+)?"/g, 'stroke-width="3"')
-    .replace(/stroke-width="2(\.[0-9]+)?"/g, 'stroke-width="3"');
-
-  // Aspectos rojo/azul/verde más marcados
+  // ✅ SOLO engrosamos las LÍNEAS DE ASPECTOS (rojo/azul/verde). Nada más.
   const COLORS = ['#ff0000', '#FF0000', '#0000ff', '#0000FF', '#00ff00', '#00FF00'];
   for (const c of COLORS) {
+    // Reemplazar stroke-width existente
     out = out.replace(
-      new RegExp(`(<(?:line|path)[^>]*stroke="${c}"[^>]*?)stroke-width="[^"]+"`, "g"),
-      `$1stroke-width="3"`
+      new RegExp(`(<(?:line|path)\\b[^>]*stroke="${c}"[^>]*?)\\s+stroke-width="[^"]+"([^>]*>)`, "g"),
+      `$1 stroke-width="3"$2`
+    );
+    // Si no tiene stroke-width, lo agregamos
+    out = out.replace(
+      new RegExp(`(<(?:line|path)\\b[^>]*stroke="${c}"(?![^>]*stroke-width)[^>]*)(>)`, "g"),
+      `$1 stroke-width="3"$2`
     );
   }
 
-  // Divisores externos entre signos a blanco
-  out = out.replace(
-    /(<(?:line|path)[^>]*stroke="#(?:000000|111111|222222|333333)"[^>]*)(>)/g,
-    `$1 stroke="#FFFFFF" stroke-width="3"$2`
-  );
-
+  // No tocamos ningún otro trazo para conservar grosores originales.
   return out;
 }
 
@@ -197,40 +174,39 @@ module.exports = async (req, res) => {
       return bad(res, 405, "Method Not Allowed. Use POST.");
     }
 
+    // Body
     let body = {};
     try {
-      body = typeof req.body === "string" ? JSON.parse(req.body) : req.body || {};
+      body = typeof req.body === "string" ? JSON.parse(req.body) : (req.body || {});
     } catch {}
     const { date, time, place } = body;
-    if (!date || !time || !place)
+    if (!date || !time || !place) {
       return bad(res, 400, "Faltan parámetros", { need: ["date", "time", "place"] });
+    }
 
+    // Geocodificación
     let lat, lon;
     try {
       const g = await ocGeocode(place);
-      lat = g.lat;
-      lon = g.lon;
+      lat = g.lat; lon = g.lon;
     } catch (e) {
-      return bad(
-        res,
-        e.status || 400,
-        "Lugar no encontrado o error de geocodificación.",
-        detailFromError(e)
-      );
+      return bad(res, e.status || 400, "Lugar no encontrado o error de geocodificación.", detailFromError(e));
     }
 
-    let timezone = 0,
-      tzSource = "fallback";
+    // Zona horaria
+    let timezone = 0, tzSource = "fallback";
     try {
       const tz = await googleTimeZone(lat, lon);
       timezone = tz.tzHours;
       tzSource = tz.source || "google";
     } catch (_) {}
 
-    const [Y, M, D] = date.split("-").map((s) => parseInt(s, 10));
-    const [HH, mm] = time.split(":").map((s) => parseInt(s || "0", 10));
+    // Base astro
+    const [Y, M, D] = date.split("-").map(s => parseInt(s, 10));
+    const [HH, mm] = time.split(":").map(s => parseInt(s || "0", 10));
     const astroBase = { day: D, month: M, year: Y, hour: HH, min: mm, lat, lon, tzone: timezone };
 
+    // 3) Gráfico — pedimos SVG (aro exterior negro e íconos blancos), luego sólo engrosamos aspectos
     let chartUrl = null;
     let chartError = null;
     try {
@@ -238,18 +214,13 @@ module.exports = async (req, res) => {
         ...astroBase,
         image_type: "svg",
         chart_size: 500,
-        sign_background: "#000000",
-        sign_icon_color: "#FFFFFF",
-        planet_icon_color: "#FFFFFF",
-        inner_circle_background: "#FFFFFF",
+        sign_background: "#000000",   // aro exterior negro
+        sign_icon_color: "#FFFFFF",   // íconos de signos blancos
+        planet_icon_color: "#FFFFFF", // íconos de planetas blancos
+        inner_circle_background: "#FFFFFF"
       });
 
-      const svgUrl =
-        chartResp.chart_url ||
-        chartResp.chartUrl ||
-        chartResp.svg_url ||
-        chartResp.svgUrl ||
-        null;
+      const svgUrl = chartResp.chart_url || chartResp.chartUrl || chartResp.svg_url || chartResp.svgUrl || null;
       if (!svgUrl) throw new Error("No se recibió URL de SVG del proveedor");
 
       const svgResp = await fetch(svgUrl);
@@ -262,40 +233,30 @@ module.exports = async (req, res) => {
       chartError = detailFromError(e) || "Fallo al pedir/modificar el gráfico";
     }
 
+    // 4) Planetas
     let planetsResp;
     try {
       planetsResp = await astroCall(EP_PLANETS, astroBase);
     } catch (e) {
-      return bad(
-        res,
-        e.status || 502,
-        "Error al pedir posiciones a AstrologyAPI.",
-        detailFromError(e)
-      );
+      return bad(res, e.status || 502, "Error al pedir posiciones a AstrologyAPI.", detailFromError(e));
     }
 
-    const sunObj = (planetsResp || []).find((p) => /sun/i.test(p.name || ""));
-    const moonObj = (planetsResp || []).find((p) => /moon/i.test(p.name || ""));
+    const sunObj  = (planetsResp || []).find(p => /sun/i.test(p.name || ""));
+    const moonObj = (planetsResp || []).find(p => /moon/i.test(p.name || ""));
 
     const sun = sunObj
-      ? {
-          sign: sunObj.sign || sunObj.sign_name || sunObj.signName || "",
-          text: sunObj.full_degree ? `Grados: ${sunObj.full_degree}` : "",
-        }
+      ? { sign: sunObj.sign || sunObj.sign_name || sunObj.signName || "", text: sunObj.full_degree ? `Grados: ${sunObj.full_degree}` : "" }
       : { sign: "", text: "" };
 
     const moon = moonObj
-      ? {
-          sign: moonObj.sign || moonObj.sign_name || moonObj.signName || "",
-          text: moonObj.full_degree ? `Grados: ${moonObj.full_degree}` : "",
-        }
+      ? { sign: moonObj.sign || moonObj.sign_name || moonObj.signName || "", text: moonObj.full_degree ? `Grados: ${moonObj.full_degree}` : "" }
       : { sign: "", text: "" };
 
-    let houses = null,
-      house1 = null;
+    // 5) Ascendente estimado
+    let houses = null, house1 = null;
     try {
       houses = await astroCall(EP_HOUSES, astroBase);
-      house1 = houses && (houses.houses || houses).find((h) => String(h.house) === "1");
+      house1 = houses && (houses.houses || houses).find(h => String(h.house) === "1");
     } catch (_) {}
 
     const asc = {
@@ -304,9 +265,10 @@ module.exports = async (req, res) => {
       source: houses ? "house_cusps/tropical" : "n/a",
     };
 
+    // 6) Positions + Asc (compat con tu front)
     const positions = (Array.isArray(planetsResp) ? planetsResp : [])
-      .filter((p) => p && p.name)
-      .map((p) => {
+      .filter(p => p && p.name)
+      .map(p => {
         const key = String(p.name || "").toLowerCase();
         const name = NOMBRE_ES[key] || p.name;
         const signKey = String(p.sign || p.sign_name || "").toLowerCase();
@@ -323,27 +285,23 @@ module.exports = async (req, res) => {
         name: "Ascendente",
         sign: SIGNO_ES[ascSignKey] || asc.sign,
         degMin: house1 && house1.degree != null ? toDegMin(house1.degree) : "",
-        retro: false,
+        retro: false
       });
     }
 
+    // 7) Respuesta JSON
     res.statusCode = 200;
     res.setHeader("Content-Type", "application/json; charset=utf-8");
-    res.end(
-      JSON.stringify(
-        {
-          chartUrl,
-          sun,
-          moon,
-          asc,
-          positions,
-          errors: { chart: chartError },
-          meta: { lat, lon, timezone, tzSource },
-        },
-        null,
-        2
-      )
-    );
+    res.end(JSON.stringify({
+      chartUrl,
+      sun,
+      moon,
+      asc,
+      positions,
+      errors: { chart: chartError },
+      meta: { lat, lon, timezone, tzSource }
+    }, null, 2));
+
   } catch (err) {
     const status = err?.status && Number.isInteger(err.status) ? err.status : 500;
     return bad(res, status, err?.message || "Error interno del servidor", detailFromError(err));
