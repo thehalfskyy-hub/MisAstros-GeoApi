@@ -158,8 +158,8 @@ function injectWhiteDividers(svgText, ascLongitudeDeg) {
   const half = Math.min(w, h) / 2;
 
   // radios dentro del aro exterior negro
-  const r1 = half * 0.78;
-  const r2 = half * 0.92;
+  const r1 = half * 0.77;
+  const r2 = half * 0.90;
 
   // Geometría de pantalla:
   // - El Ascendente se dibuja a la izquierda (≈ 180° en pantalla).
