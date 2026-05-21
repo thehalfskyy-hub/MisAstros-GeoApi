@@ -9,6 +9,7 @@ const ALLOWED_ORIGINS = new Set([
   "https://jauxxx-v4.myshopify.com",
   "http://localhost:3000",
   "http://localhost:5173",
+  "https://misastros.com/en",
 ]);
 
 function setCors(res, origin) {
