@@ -6,10 +6,11 @@ const ALLOWED_ORIGINS = new Set([
   "https://www.misastros.com",
   "https://misastrosargentina.com",
   "https://www.misastrosargentina.com",
+  "https://misastros.com/en",
+  "https://www.misastros.com/en",
   "https://jauxxx-v4.myshopify.com",
   "http://localhost:3000",
   "http://localhost:5173",
-  "https://misastros.com/en",
 ]);
 
 function setCors(res, origin) {
