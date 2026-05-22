@@ -45,7 +45,7 @@ module.exports = async (req, res) => {
     const q = (url.searchParams.get("q") || "").trim();
 
     const requestedLang = (url.searchParams.get("lang") || "es").toLowerCase();
-const lang = requestedLang === "en" ? "en" : "es";
+
 
     if (!q || q.length < 3) {
       return bad(res, 400, "Parámetro 'q' mínimo 3 caracteres");
@@ -55,9 +55,9 @@ const lang = requestedLang === "en" ? "en" : "es";
     if (!key) return bad(res, 500, "Falta OPENCAGE_KEY");
 
     const ocURL =
-      "https://api.opencagedata.com/geocode/v1/json?q=" +
-      encodeURIComponent(q) +
-      `&key=${key}&limit=6&language=${lang}&no_annotations=1`;
+  "https://api.opencagedata.com/geocode/v1/json?q=" +
+  encodeURIComponent(q) +
+  `&key=${key}&limit=6&language=es&no_annotations=1`;
 
     const r = await fetch(ocURL);
     if (!r.ok) return bad(res, r.status, `OpenCage ${r.status}`);
