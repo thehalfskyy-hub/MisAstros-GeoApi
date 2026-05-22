@@ -6,8 +6,6 @@ const ALLOWED_ORIGINS = new Set([
   "https://www.misastros.com",
   "https://misastrosargentina.com",
   "https://www.misastrosargentina.com",
-  "https://www.misastros.com/en-us",
-  "https://misastros.com/en-us",
   "https://jauxxx-v4.myshopify.com",
   "http://localhost:3000",
   "http://localhost:5173",
