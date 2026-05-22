@@ -44,9 +44,6 @@ module.exports = async (req, res) => {
     const url = new URL(req.url, "http://localhost");
     const q = (url.searchParams.get("q") || "").trim();
 
-    const requestedLang = (url.searchParams.get("lang") || "es").toLowerCase();
-
-
     if (!q || q.length < 3) {
       return bad(res, 400, "Parámetro 'q' mínimo 3 caracteres");
     }
