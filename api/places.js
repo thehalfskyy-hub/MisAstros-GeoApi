@@ -6,8 +6,6 @@ const ALLOWED_ORIGINS = new Set([
   "https://www.misastros.com",
   "https://misastrosargentina.com",
   "https://www.misastrosargentina.com",
-  "https://misastros.com/en-us",
-  "https://www.misastros.com/en-us",
   "https://jauxxx-v4.myshopify.com",
   "http://localhost:3000",
   "http://localhost:5173",
@@ -46,6 +44,9 @@ module.exports = async (req, res) => {
     const url = new URL(req.url, "http://localhost");
     const q = (url.searchParams.get("q") || "").trim();
 
+    const requestedLang = (url.searchParams.get("lang") || "es").toLowerCase();
+const lang = requestedLang === "en" ? "en" : "es";
+
     if (!q || q.length < 3) {
       return bad(res, 400, "Parámetro 'q' mínimo 3 caracteres");
     }
@@ -56,7 +57,7 @@ module.exports = async (req, res) => {
     const ocURL =
       "https://api.opencagedata.com/geocode/v1/json?q=" +
       encodeURIComponent(q) +
-      `&key=${key}&limit=6&language=es&no_annotations=1`;
+      `&key=${key}&limit=6&language=${lang}&no_annotations=1`;
 
     const r = await fetch(ocURL);
     if (!r.ok) return bad(res, r.status, `OpenCage ${r.status}`);
