@@ -100,46 +100,41 @@ const lugar_nacimiento = body.lugar_nacimiento || trelloData.lugar_nacimiento;
       });
     }
 
-    /*
-      PRIMERA VERSIÓN:
-      Por ahora soportamos Montevideo hardcodeado para probar el flujo.
-      Después reemplazamos esto por geocoding automático.
-    */
-  const locationMap = {
-  'montevideo, uruguay': {
-    lat: -34.9011,
-    lon: -56.1645,
-    tzone: -3
-  },
-  'santiago de chile': {
-    lat: -33.4489,
-    lon: -70.6693,
-    tzone: -4
-  },
-  'santiago, chile': {
-    lat: -33.4489,
-    lon: -70.6693,
-    tzone: -4
-  }
+let geo;
+let timezoneData;
+
+try {
+  geo = await ocGeocode(lugar_nacimiento);
+
+  timezoneData = await googleTimeZoneForBirth(
+    geo.lat,
+    geo.lon,
+    year,
+    month,
+    day,
+    hour,
+    min
+  );
+} catch (error) {
+  return res.status(error.status || 400).json({
+    ok: false,
+    error: 'Error resolviendo lugar o zona horaria.',
+    lugar_nacimiento,
+    details: error.detail || error.message || error
+  });
+}
+
+const location = {
+  lat: geo.lat,
+  lon: geo.lon,
+  tzone: timezoneData.tzone,
+  formatted: geo.formatted,
+  city: geo.city,
+  state: geo.state,
+  country: geo.country,
+  timezoneId: timezoneData.timezoneId,
+  timezoneName: timezoneData.timezoneName
 };
-
-    const locationKey = String(lugar_nacimiento)
-      .trim()
-      .toLowerCase()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '');
-
-    const location = locationMap[locationKey];
-
-    if (!location) {
-      return res.status(400).json({
-        ok: false,
-        error: 'Lugar no soportado todavía.',
-        lugar_nacimiento,
-        message:
-  'Este lugar todavía no está cargado en locationMap. Después agregamos geocoding automático.'
-      });
-    }
 
     const userId = process.env.ASTRO_USER_ID;
     const apiKey = process.env.ASTRO_API_KEY;
@@ -218,6 +213,108 @@ const lugar_nacimiento = body.lugar_nacimiento || trelloData.lugar_nacimiento;
       return String(hourString).replace(':', '.');
     }
 
+
+
+
+async function ocGeocode(place) {
+  const key = process.env.OPENCAGE_KEY;
+
+  if (!key) {
+    const e = new Error('Falta OPENCAGE_KEY en Vercel.');
+    e.status = 500;
+    throw e;
+  }
+
+  const url =
+    'https://api.opencagedata.com/geocode/v1/json?q=' +
+    encodeURIComponent(place) +
+    `&key=${key}&limit=1&language=es&no_annotations=0`;
+
+  const response = await fetch(url);
+
+  if (!response.ok) {
+    const e = new Error(`OpenCage error ${response.status}`);
+    e.status = response.status;
+    throw e;
+  }
+
+  const data = await response.json();
+  const result = data.results && data.results[0];
+
+  if (!result) {
+    const e = new Error('Lugar no encontrado.');
+    e.status = 400;
+    throw e;
+  }
+
+  return {
+    lat: result.geometry.lat,
+    lon: result.geometry.lng,
+    formatted: result.formatted || place,
+    city:
+      result.components?.city ||
+      result.components?.town ||
+      result.components?.village ||
+      '',
+    state: result.components?.state || '',
+    country: result.components?.country || ''
+  };
+}
+
+async function googleTimeZoneForBirth(lat, lon, year, month, day, hour, min) {
+  const key = process.env.GOOGLE_API_KEY || process.env.GOOGLE_TZ_KEY;
+
+  if (!key) {
+    const e = new Error('Falta GOOGLE_API_KEY o GOOGLE_TZ_KEY en Vercel.');
+    e.status = 500;
+    throw e;
+  }
+
+  /*
+    Usamos la fecha/hora de nacimiento para que Google devuelva
+    el offset correcto de ese momento, incluyendo horario de verano.
+  */
+  const timestamp = Math.floor(
+    Date.UTC(year, month - 1, day, hour || 12, min || 0) / 1000
+  );
+
+  const url =
+    `https://maps.googleapis.com/maps/api/timezone/json?location=${lat},${lon}` +
+    `&timestamp=${timestamp}&key=${key}`;
+
+  const response = await fetch(url);
+
+  if (!response.ok) {
+    const e = new Error(`Google Time Zone error ${response.status}`);
+    e.status = response.status;
+    throw e;
+  }
+
+  const data = await response.json();
+
+  if (data.status !== 'OK') {
+    const e = new Error(`Google Time Zone status: ${data.status}`);
+    e.status = 502;
+    e.detail = data;
+    throw e;
+  }
+
+  const totalOffsetSeconds = (data.rawOffset || 0) + (data.dstOffset || 0);
+
+  return {
+    tzone: totalOffsetSeconds / 3600,
+    timezoneId: data.timeZoneId || '',
+    timezoneName: data.timeZoneName || '',
+    rawOffset: data.rawOffset || 0,
+    dstOffset: data.dstOffset || 0
+  };
+}
+
+
+
+
+
+    
     function signToEnglish(sign) {
       const map = {
         Aries: 'Aries',
@@ -518,15 +615,21 @@ const elementsData = buildElementsData(planetsData);
     
    return res.status(200).json({
   ok: true,
-  input: {
-    nombre,
-    fecha_nacimiento,
-    hora_nacimiento: horaNormalizada,
-    lugar_nacimiento,
-    lat: location.lat,
-    lon: location.lon,
-    tzone: location.tzone
-  },
+input: {
+  nombre,
+  fecha_nacimiento,
+  hora_nacimiento: horaNormalizada,
+  lugar_nacimiento,
+  lugar_resuelto: location.formatted,
+  lat: location.lat,
+  lon: location.lon,
+  tzone: location.tzone,
+  timezoneId: location.timezoneId,
+  timezoneName: location.timezoneName,
+  city: location.city,
+  state: location.state,
+  country: location.country
+},
   excel: excelData,
   sheet_normal: sheetNormalData,
   sheet_normal_rows: sheetNormalRows,
