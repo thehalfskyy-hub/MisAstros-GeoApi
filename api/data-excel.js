@@ -166,23 +166,90 @@ export default async function handler(req, res) {
       callAstrologyApi('house_cusps/tropical')
     ]);
 
-    return res.status(200).json({
-      ok: true,
-      input: {
-        nombre,
-        fecha_nacimiento,
-        hora_nacimiento: horaNormalizada,
-        lugar_nacimiento,
-        lat: location.lat,
-        lon: location.lon,
-        tzone: location.tzone
-      },
-      sent_payload: payload,
-      raw: {
-        planets: planetsData,
-        house_cusps: houseCuspsData
-      }
-    });
+    function formatDegree(decimalDegree) {
+  const degree = Math.floor(decimalDegree);
+  const minutes = Math.round((decimalDegree - degree) * 60);
+
+  if (minutes === 60) {
+    return `${degree + 1}°00'`;
+  }
+
+  return `${degree}°${String(minutes).padStart(2, '0')}'`;
+}
+
+function slugPlanetName(name) {
+  const map = {
+    'Sol': 'sol',
+    'Luna': 'luna',
+    'Mercurio': 'mercurio',
+    'Venus': 'venus',
+    'Marte': 'marte',
+    'Júpiter': 'jupiter',
+    'Jupiter': 'jupiter',
+    'Saturno': 'saturno',
+    'Urano': 'urano',
+    'Neptuno': 'neptuno',
+    'Plutón': 'pluton',
+    'Pluton': 'pluton',
+    'Ascendente': 'ascendente'
+  };
+
+  return map[name] || String(name)
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, '_');
+}
+
+function buildExcelData(planets, houseCusps) {
+  const excel = {};
+
+  for (const planet of planets) {
+    const key = slugPlanetName(planet.name);
+
+    excel[`${key}_signo`] = planet.sign || '';
+    excel[`${key}_casa`] = planet.house || '';
+    excel[`${key}_grado`] = formatDegree(planet.normDegree || 0);
+    excel[`${key}_grado_decimal`] = planet.normDegree || 0;
+    excel[`${key}_grado_total`] = planet.fullDegree || 0;
+    excel[`${key}_retrogrado`] = planet.isRetro === 'true' ? 'Sí' : 'No';
+  }
+
+  if (houseCusps && Array.isArray(houseCusps.houses)) {
+    for (const house of houseCusps.houses) {
+      excel[`casa_${house.house}_signo`] = house.sign || '';
+      excel[`casa_${house.house}_grado_total`] = house.degree || '';
+    }
+  }
+
+  excel.ascendente_grado_total = houseCusps?.ascendant || '';
+  excel.medio_cielo_grado_total = houseCusps?.midheaven || '';
+  excel.vertex_grado_total = houseCusps?.vertex || '';
+
+  return excel;
+}
+
+const excelData = buildExcelData(planetsData, houseCuspsData);
+
+return res.status(200).json({
+  ok: true,
+  input: {
+    nombre,
+    fecha_nacimiento,
+    hora_nacimiento: horaNormalizada,
+    lugar_nacimiento,
+    lat: location.lat,
+    lon: location.lon,
+    tzone: location.tzone
+  },
+  excel: excelData,
+  sent_payload: payload,
+  raw: {
+    planets: planetsData,
+    house_cusps: houseCuspsData
+  }
+});
+    
   } catch (error) {
     return res.status(error.status || 500).json({
       ok: false,
