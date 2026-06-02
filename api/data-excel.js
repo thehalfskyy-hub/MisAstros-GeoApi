@@ -429,30 +429,108 @@ function buildSheetNormalRows(sheet) {
   ];
 }
 
+    function buildElementsData(planets) {
+  const signElements = {
+    Aries: 'fire',
+    Leo: 'fire',
+    Sagittarius: 'fire',
+
+    Taurus: 'earth',
+    Virgo: 'earth',
+    Capricorn: 'earth',
+
+    Gemini: 'air',
+    Libra: 'air',
+    Aquarius: 'air',
+
+    Cancer: 'water',
+    Scorpio: 'water',
+    Pisces: 'water'
+  };
+
+  const allowedBodies = [
+    'Sun',
+    'Moon',
+    'Mercury',
+    'Venus',
+    'Mars',
+    'Jupiter',
+    'Saturn',
+    'Uranus',
+    'Neptune',
+    'Pluto',
+    'Ascendant'
+  ];
+
+  const counts = {
+    fire: 0,
+    earth: 0,
+    air: 0,
+    water: 0
+  };
+
+  for (const planet of planets) {
+    if (!allowedBodies.includes(planet.name)) continue;
+
+    const sign = signToEnglish(planet.sign);
+    const element = signElements[sign];
+
+    if (element) {
+      counts[element] += 1;
+    }
+  }
+
+  const total = counts.fire + counts.earth + counts.air + counts.water || 1;
+
+  const percentages = {
+    fire: Number(((counts.fire / total) * 100).toFixed(2)),
+    earth: Number(((counts.earth / total) * 100).toFixed(2)),
+    air: Number(((counts.air / total) * 100).toFixed(2)),
+    water: Number(((counts.water / total) * 100).toFixed(2))
+  };
+
+  const dominant = Object.entries(percentages)
+    .sort((a, b) => b[1] - a[1])[0][0];
+
+  return {
+    counts,
+    percentages,
+    dominant,
+    rows: [
+      ['Fire', counts.fire, percentages.fire],
+      ['Earth', counts.earth, percentages.earth],
+      ['Air', counts.air, percentages.air],
+      ['Water', counts.water, percentages.water]
+    ]
+  };
+}
+
 const excelData = buildExcelData(planetsData, houseCuspsData);
 const sheetNormalData = buildSheetNormalData(excelData);
 const sheetNormalRows = buildSheetNormalRows(sheetNormalData);
-
-    return res.status(200).json({
-      ok: true,
-      input: {
-        nombre,
-        fecha_nacimiento,
-        hora_nacimiento: horaNormalizada,
-        lugar_nacimiento,
-        lat: location.lat,
-        lon: location.lon,
-        tzone: location.tzone
-      },
-      excel: excelData,
-      sheet_normal: sheetNormalData,
-sheet_normal_rows: sheetNormalRows,
-      sent_payload: payload,
-      raw: {
-        planets: planetsData,
-        house_cusps: houseCuspsData
-      }
-    });
+const elementsData = buildElementsData(planetsData);
+    
+   return res.status(200).json({
+  ok: true,
+  input: {
+    nombre,
+    fecha_nacimiento,
+    hora_nacimiento: horaNormalizada,
+    lugar_nacimiento,
+    lat: location.lat,
+    lon: location.lon,
+    tzone: location.tzone
+  },
+  excel: excelData,
+  sheet_normal: sheetNormalData,
+  sheet_normal_rows: sheetNormalRows,
+  elements: elementsData,
+  sent_payload: payload,
+  raw: {
+    planets: planetsData,
+    house_cusps: houseCuspsData
+  }
+});
   } catch (error) {
     return res.status(error.status || 500).json({
       ok: false,
