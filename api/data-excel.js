@@ -105,13 +105,23 @@ const lugar_nacimiento = body.lugar_nacimiento || trelloData.lugar_nacimiento;
       Por ahora soportamos Montevideo hardcodeado para probar el flujo.
       Después reemplazamos esto por geocoding automático.
     */
-    const locationMap = {
-      'montevideo, uruguay': {
-        lat: -34.9011,
-        lon: -56.1645,
-        tzone: -3
-      }
-    };
+  const locationMap = {
+  'montevideo, uruguay': {
+    lat: -34.9011,
+    lon: -56.1645,
+    tzone: -3
+  },
+  'santiago de chile': {
+    lat: -33.4489,
+    lon: -70.6693,
+    tzone: -4
+  },
+  'santiago, chile': {
+    lat: -33.4489,
+    lon: -70.6693,
+    tzone: -4
+  }
+};
 
     const locationKey = String(lugar_nacimiento)
       .trim()
