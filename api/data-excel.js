@@ -1,6 +1,5 @@
 export default async function handler(req, res) {
   try {
-    // CORS básico para que puedas testear si hace falta desde navegador/Make
     res.setHeader('Access-Control-Allow-Credentials', 'true');
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -46,7 +45,6 @@ export default async function handler(req, res) {
       });
     }
 
-    // Fecha esperada: YYYY-MM-DD
     const [year, month, day] = String(fecha_nacimiento)
       .split('-')
       .map(Number);
@@ -59,7 +57,6 @@ export default async function handler(req, res) {
       });
     }
 
-    // Hora aceptada: 21.15 o 21:15
     const horaNormalizada = String(hora_nacimiento)
       .trim()
       .replace('.', ':');
@@ -83,9 +80,8 @@ export default async function handler(req, res) {
 
     /*
       PRIMERA VERSIÓN:
-      Por ahora soportamos Montevideo hardcodeado para probar todo el flujo.
-      Después lo reemplazamos por geocoding automático usando OpenCage + Google TZ,
-      que veo que ya tenés cargados en Vercel.
+      Por ahora soportamos Montevideo hardcodeado para probar el flujo.
+      Después reemplazamos esto por geo_details + timezone_with_dst.
     */
     const locationMap = {
       'montevideo, uruguay': {
@@ -113,7 +109,6 @@ export default async function handler(req, res) {
       });
     }
 
-    // Variables que ya tenés en Vercel
     const userId = process.env.ASTRO_USER_ID;
     const apiKey = process.env.ASTRO_API_KEY;
 
@@ -135,39 +130,41 @@ export default async function handler(req, res) {
       min,
       lat: location.lat,
       lon: location.lon,
-      tzone: location.tzone
+      tzone: location.tzone,
+      house_type: 'placidus'
     };
 
-    /*
-      AstrologyAPI:
-      - Usa Basic Auth con User ID como username y API Key como password.
-      - El endpoint western_chart_data es POST y devuelve casas, planetas en casas y aspectos.
-      Docs oficiales:
-      https://www.astrologyapi.com/western-api-docs/api-ref/163/western_chart_data
-    */
-    const astrologyResponse = await fetch(
-      'https://json.astrologyapi.com/v1/western_chart_data',
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Basic ${auth}`,
-          'Content-Type': 'application/json',
-          'Accept-Language': 'es'
-        },
-        body: JSON.stringify(payload)
+    async function callAstrologyApi(endpoint) {
+      const response = await fetch(
+        `https://json.astrologyapi.com/v1/${endpoint}`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Basic ${auth}`,
+            'Content-Type': 'application/json',
+            'Accept-Language': 'es'
+          },
+          body: JSON.stringify(payload)
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw {
+          status: response.status,
+          endpoint,
+          data
+        };
       }
-    );
 
-    const astrologyData = await astrologyResponse.json();
-
-    if (!astrologyResponse.ok) {
-      return res.status(astrologyResponse.status).json({
-        ok: false,
-        error: 'Error desde AstrologyAPI.',
-        sent_payload: payload,
-        details: astrologyData
-      });
+      return data;
     }
+
+    const [planetsData, houseCuspsData] = await Promise.all([
+      callAstrologyApi('planets/tropical'),
+      callAstrologyApi('house_cusps/tropical')
+    ]);
 
     return res.status(200).json({
       ok: true,
@@ -181,12 +178,17 @@ export default async function handler(req, res) {
         tzone: location.tzone
       },
       sent_payload: payload,
-      raw: astrologyData
+      raw: {
+        planets: planetsData,
+        house_cusps: houseCuspsData
+      }
     });
   } catch (error) {
-    return res.status(500).json({
+    return res.status(error.status || 500).json({
       ok: false,
-      error: error.message || 'Error interno en data-excel.js'
+      error: 'Error en data-excel.js',
+      endpoint: error.endpoint || null,
+      details: error.data || error.message || error
     });
   }
 }
