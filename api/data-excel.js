@@ -384,8 +384,24 @@ export default async function handler(req, res) {
       };
     }
 
-    const excelData = buildExcelData(planetsData, houseCuspsData);
-    const sheetNormalData = buildSheetNormalData(excelData);
+function buildSheetNormalRows(sheet) {
+  return [
+    [sheet.sun_sign, sheet.sun_degree, sheet.sun_house, sheet.sun_motion],
+    [sheet.moon_sign, sheet.moon_degree, sheet.moon_house, sheet.moon_motion],
+    [sheet.mercury_sign, sheet.mercury_degree, sheet.mercury_house, sheet.mercury_motion],
+    [sheet.venus_sign, sheet.venus_degree, sheet.venus_house, sheet.venus_motion],
+    [sheet.mars_sign, sheet.mars_degree, sheet.mars_house, sheet.mars_motion],
+    [sheet.jupiter_sign, sheet.jupiter_degree, sheet.jupiter_house, sheet.jupiter_motion],
+    [sheet.saturn_sign, sheet.saturn_degree, sheet.saturn_house, sheet.saturn_motion],
+    [sheet.uranus_sign, sheet.uranus_degree, sheet.uranus_house, sheet.uranus_motion],
+    [sheet.neptune_sign, sheet.neptune_degree, sheet.neptune_house, sheet.neptune_motion],
+    [sheet.pluto_sign, sheet.pluto_degree, sheet.pluto_house, sheet.pluto_motion]
+  ];
+}
+
+const excelData = buildExcelData(planetsData, houseCuspsData);
+const sheetNormalData = buildSheetNormalData(excelData);
+const sheetNormalRows = buildSheetNormalRows(sheetNormalData);
 
     return res.status(200).json({
       ok: true,
@@ -400,6 +416,7 @@ export default async function handler(req, res) {
       },
       excel: excelData,
       sheet_normal: sheetNormalData,
+sheet_normal_rows: sheetNormalRows,
       sent_payload: payload,
       raw: {
         planets: planetsData,
