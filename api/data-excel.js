@@ -137,7 +137,7 @@ const lugar_nacimiento = body.lugar_nacimiento || trelloData.lugar_nacimiento;
         error: 'Lugar no soportado todavía.',
         lugar_nacimiento,
         message:
-          'Para esta primera prueba solo está cargado Montevideo, Uruguay. Después agregamos geocoding automático.'
+  'Este lugar todavía no está cargado en locationMap. Después agregamos geocoding automático.'
       });
     }
 
@@ -492,17 +492,23 @@ function buildSheetNormalRows(sheet) {
   const dominant = Object.entries(percentages)
     .sort((a, b) => b[1] - a[1])[0][0];
 
-  return {
-    counts,
-    percentages,
-    dominant,
-    rows: [
-      ['Fire', counts.fire, percentages.fire],
-      ['Earth', counts.earth, percentages.earth],
-      ['Air', counts.air, percentages.air],
-      ['Water', counts.water, percentages.water]
-    ]
-  };
+return {
+  counts,
+  percentages,
+  dominant,
+  percentage_rows: [
+    [percentages.fire],
+    [percentages.earth],
+    [percentages.air],
+    [percentages.water]
+  ],
+  rows: [
+    ['Fire', counts.fire, percentages.fire],
+    ['Earth', counts.earth, percentages.earth],
+    ['Air', counts.air, percentages.air],
+    ['Water', counts.water, percentages.water]
+  ]
+};
 }
 
 const excelData = buildExcelData(planetsData, houseCuspsData);
