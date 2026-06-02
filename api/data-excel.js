@@ -45,6 +45,7 @@ export default async function handler(req, res) {
       });
     }
 
+    // Fecha esperada: YYYY-MM-DD
     const [year, month, day] = String(fecha_nacimiento)
       .split('-')
       .map(Number);
@@ -57,6 +58,7 @@ export default async function handler(req, res) {
       });
     }
 
+    // Hora aceptada: 21.15 o 21:15
     const horaNormalizada = String(hora_nacimiento)
       .trim()
       .replace('.', ':');
@@ -81,7 +83,7 @@ export default async function handler(req, res) {
     /*
       PRIMERA VERSIÓN:
       Por ahora soportamos Montevideo hardcodeado para probar el flujo.
-      Después reemplazamos esto por geo_details + timezone_with_dst.
+      Después reemplazamos esto por geocoding automático.
     */
     const locationMap = {
       'montevideo, uruguay': {
@@ -142,7 +144,7 @@ export default async function handler(req, res) {
           headers: {
             Authorization: `Basic ${auth}`,
             'Content-Type': 'application/json',
-            'Accept-Language': 'es'
+            'Accept-Language': 'en'
           },
           body: JSON.stringify(payload)
         }
@@ -167,89 +169,243 @@ export default async function handler(req, res) {
     ]);
 
     function formatDegree(decimalDegree) {
-  const degree = Math.floor(decimalDegree);
-  const minutes = Math.round((decimalDegree - degree) * 60);
+      const degree = Math.floor(decimalDegree);
+      const minutes = Math.round((decimalDegree - degree) * 60);
 
-  if (minutes === 60) {
-    return `${degree + 1}°00'`;
-  }
+      if (minutes === 60) {
+        return `${degree + 1}°00'`;
+      }
 
-  return `${degree}°${String(minutes).padStart(2, '0')}'`;
-}
-
-function slugPlanetName(name) {
-  const map = {
-    'Sol': 'sol',
-    'Luna': 'luna',
-    'Mercurio': 'mercurio',
-    'Venus': 'venus',
-    'Marte': 'marte',
-    'Júpiter': 'jupiter',
-    'Jupiter': 'jupiter',
-    'Saturno': 'saturno',
-    'Urano': 'urano',
-    'Neptuno': 'neptuno',
-    'Plutón': 'pluton',
-    'Pluton': 'pluton',
-    'Ascendente': 'ascendente'
-  };
-
-  return map[name] || String(name)
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/\s+/g, '_');
-}
-
-function buildExcelData(planets, houseCusps) {
-  const excel = {};
-
-  for (const planet of planets) {
-    const key = slugPlanetName(planet.name);
-
-    excel[`${key}_signo`] = planet.sign || '';
-    excel[`${key}_casa`] = planet.house || '';
-    excel[`${key}_grado`] = formatDegree(planet.normDegree || 0);
-    excel[`${key}_grado_decimal`] = planet.normDegree || 0;
-    excel[`${key}_grado_total`] = planet.fullDegree || 0;
-    excel[`${key}_retrogrado`] = planet.isRetro === 'true' ? 'Sí' : 'No';
-  }
-
-  if (houseCusps && Array.isArray(houseCusps.houses)) {
-    for (const house of houseCusps.houses) {
-      excel[`casa_${house.house}_signo`] = house.sign || '';
-      excel[`casa_${house.house}_grado_total`] = house.degree || '';
+      return `${degree}°${String(minutes).padStart(2, '0')}'`;
     }
-  }
 
-  excel.ascendente_grado_total = houseCusps?.ascendant || '';
-  excel.medio_cielo_grado_total = houseCusps?.midheaven || '';
-  excel.vertex_grado_total = houseCusps?.vertex || '';
+    function formatDateForSheet(dateString) {
+      const [yyyy, mm, dd] = String(dateString).split('-');
+      return `${dd}/${mm}/${yyyy}`;
+    }
 
-  return excel;
-}
+    function formatHourForSheet(hourString) {
+      return String(hourString).replace(':', '.');
+    }
 
-const excelData = buildExcelData(planetsData, houseCuspsData);
+    function signToEnglish(sign) {
+      const map = {
+        Aries: 'Aries',
+        Tauro: 'Taurus',
+        Taurus: 'Taurus',
+        Géminis: 'Gemini',
+        Geminis: 'Gemini',
+        Gemini: 'Gemini',
+        Cáncer: 'Cancer',
+        Cancer: 'Cancer',
+        Leo: 'Leo',
+        Virgo: 'Virgo',
+        Libra: 'Libra',
+        Escorpio: 'Scorpio',
+        Scorpio: 'Scorpio',
+        Sagitario: 'Sagittarius',
+        Sagittarius: 'Sagittarius',
+        Capricornio: 'Capricorn',
+        Capricorn: 'Capricorn',
+        Acuario: 'Aquarius',
+        Aquarius: 'Aquarius',
+        Piscis: 'Pisces',
+        Pisces: 'Pisces'
+      };
 
-return res.status(200).json({
-  ok: true,
-  input: {
-    nombre,
-    fecha_nacimiento,
-    hora_nacimiento: horaNormalizada,
-    lugar_nacimiento,
-    lat: location.lat,
-    lon: location.lon,
-    tzone: location.tzone
-  },
-  excel: excelData,
-  sent_payload: payload,
-  raw: {
-    planets: planetsData,
-    house_cusps: houseCuspsData
-  }
-});
-    
+      return map[sign] || sign || '';
+    }
+
+    function slugPlanetName(name) {
+      const map = {
+        Sol: 'sol',
+        Sun: 'sol',
+
+        Luna: 'luna',
+        Moon: 'luna',
+
+        Mercurio: 'mercurio',
+        Mercury: 'mercurio',
+
+        Venus: 'venus',
+
+        Marte: 'marte',
+        Mars: 'marte',
+
+        Júpiter: 'jupiter',
+        Jupiter: 'jupiter',
+
+        Saturno: 'saturno',
+        Saturn: 'saturno',
+
+        Urano: 'urano',
+        Uranus: 'urano',
+
+        Neptuno: 'neptuno',
+        Neptune: 'neptuno',
+
+        Plutón: 'pluton',
+        Pluton: 'pluton',
+        Pluto: 'pluton',
+
+        Ascendente: 'ascendente',
+        Ascendant: 'ascendente'
+      };
+
+      return map[name] || String(name)
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/\s+/g, '_');
+    }
+
+    function buildExcelData(planets, houseCusps) {
+      const excel = {};
+
+      for (const planet of planets) {
+        const key = slugPlanetName(planet.name);
+        const sign = signToEnglish(planet.sign);
+        const motion = planet.isRetro === 'true' ? 'Retrograde' : 'Direct';
+
+        excel[`${key}_signo`] = sign;
+        excel[`${key}_casa`] = planet.house || '';
+        excel[`${key}_grado`] = formatDegree(planet.normDegree || 0);
+        excel[`${key}_grado_decimal`] = planet.normDegree || 0;
+        excel[`${key}_grado_total`] = planet.fullDegree || 0;
+
+        // Lo dejamos en los dos formatos por compatibilidad.
+        excel[`${key}_retrogrado`] = planet.isRetro === 'true' ? 'Sí' : 'No';
+        excel[`${key}_motion`] = motion;
+      }
+
+      if (houseCusps && Array.isArray(houseCusps.houses)) {
+        for (const house of houseCusps.houses) {
+          excel[`casa_${house.house}_signo`] = signToEnglish(house.sign);
+          excel[`casa_${house.house}_grado_total`] = house.degree || '';
+        }
+      }
+
+      excel.ascendente_grado_total = houseCusps?.ascendant || '';
+      excel.medio_cielo_grado_total = houseCusps?.midheaven || '';
+      excel.vertex_grado_total = houseCusps?.vertex || '';
+
+      return excel;
+    }
+
+    function buildSheetNormalData(excel) {
+      return {
+        // Datos generales de la plantilla
+        fecha: formatDateForSheet(fecha_nacimiento),
+        hora: formatHourForSheet(horaNormalizada),
+        lugar: lugar_nacimiento,
+        nombre,
+
+        // Fila Sun
+        sun_sign: excel.sol_signo || '',
+        sun_degree: excel.sol_grado || '',
+        sun_house: excel.sol_casa || '',
+        sun_motion: excel.sol_motion || '',
+
+        // Fila Moon
+        moon_sign: excel.luna_signo || '',
+        moon_degree: excel.luna_grado || '',
+        moon_house: excel.luna_casa || '',
+        moon_motion: excel.luna_motion || '',
+
+        // Fila Mercury
+        mercury_sign: excel.mercurio_signo || '',
+        mercury_degree: excel.mercurio_grado || '',
+        mercury_house: excel.mercurio_casa || '',
+        mercury_motion: excel.mercurio_motion || '',
+
+        // Fila Venus
+        venus_sign: excel.venus_signo || '',
+        venus_degree: excel.venus_grado || '',
+        venus_house: excel.venus_casa || '',
+        venus_motion: excel.venus_motion || '',
+
+        // Fila Mars
+        mars_sign: excel.marte_signo || '',
+        mars_degree: excel.marte_grado || '',
+        mars_house: excel.marte_casa || '',
+        mars_motion: excel.marte_motion || '',
+
+        // Fila Jupiter
+        jupiter_sign: excel.jupiter_signo || '',
+        jupiter_degree: excel.jupiter_grado || '',
+        jupiter_house: excel.jupiter_casa || '',
+        jupiter_motion: excel.jupiter_motion || '',
+
+        // Fila Saturn
+        saturn_sign: excel.saturno_signo || '',
+        saturn_degree: excel.saturno_grado || '',
+        saturn_house: excel.saturno_casa || '',
+        saturn_motion: excel.saturno_motion || '',
+
+        // Fila Uranus
+        uranus_sign: excel.urano_signo || '',
+        uranus_degree: excel.urano_grado || '',
+        uranus_house: excel.urano_casa || '',
+        uranus_motion: excel.urano_motion || '',
+
+        // Fila Neptune
+        neptune_sign: excel.neptuno_signo || '',
+        neptune_degree: excel.neptuno_grado || '',
+        neptune_house: excel.neptuno_casa || '',
+        neptune_motion: excel.neptuno_motion || '',
+
+        // Fila Pluto
+        pluto_sign: excel.pluton_signo || '',
+        pluto_degree: excel.pluton_grado || '',
+        pluto_house: excel.pluton_casa || '',
+        pluto_motion: excel.pluton_motion || '',
+
+        // Ascendente
+        asc_sign: excel.ascendente_signo || '',
+        asc_sign_label: excel.ascendente_signo
+          ? `${excel.ascendente_signo} (ASC)`
+          : '',
+        asc_degree: excel.ascendente_grado || '',
+        asc_house: excel.ascendente_casa || 1,
+
+        // Casas
+        casa_1_signo: excel.casa_1_signo || '',
+        casa_2_signo: excel.casa_2_signo || '',
+        casa_3_signo: excel.casa_3_signo || '',
+        casa_4_signo: excel.casa_4_signo || '',
+        casa_5_signo: excel.casa_5_signo || '',
+        casa_6_signo: excel.casa_6_signo || '',
+        casa_7_signo: excel.casa_7_signo || '',
+        casa_8_signo: excel.casa_8_signo || '',
+        casa_9_signo: excel.casa_9_signo || '',
+        casa_10_signo: excel.casa_10_signo || '',
+        casa_11_signo: excel.casa_11_signo || '',
+        casa_12_signo: excel.casa_12_signo || ''
+      };
+    }
+
+    const excelData = buildExcelData(planetsData, houseCuspsData);
+    const sheetNormalData = buildSheetNormalData(excelData);
+
+    return res.status(200).json({
+      ok: true,
+      input: {
+        nombre,
+        fecha_nacimiento,
+        hora_nacimiento: horaNormalizada,
+        lugar_nacimiento,
+        lat: location.lat,
+        lon: location.lon,
+        tzone: location.tzone
+      },
+      excel: excelData,
+      sheet_normal: sheetNormalData,
+      sent_payload: payload,
+      raw: {
+        planets: planetsData,
+        house_cusps: houseCuspsData
+      }
+    });
   } catch (error) {
     return res.status(error.status || 500).json({
       ok: false,
