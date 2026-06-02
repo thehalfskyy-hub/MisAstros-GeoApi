@@ -19,12 +19,32 @@ export default async function handler(req, res) {
       });
     }
 
-    const {
-      nombre,
-      fecha_nacimiento,
-      hora_nacimiento,
-      lugar_nacimiento
-    } = req.body || {};
+function extractFromTrelloText(text) {
+  const safeText = String(text || '');
+
+  function getValue(label) {
+    const regex = new RegExp(`${label}:\\s*(.+)`, 'i');
+    const match = safeText.match(regex);
+    return match ? match[1].trim() : '';
+  }
+
+  return {
+    nombre: getValue('Nombre'),
+    fecha_nacimiento: getValue('Fecha de nacimiento'),
+    hora_nacimiento: getValue('Hora de nacimiento'),
+    lugar_nacimiento: getValue('Lugar de nacimiento')
+  };
+}
+
+const body = req.body || {};
+const trelloData = body.trello_text
+  ? extractFromTrelloText(body.trello_text)
+  : {};
+
+const nombre = body.nombre || trelloData.nombre;
+const fecha_nacimiento = body.fecha_nacimiento || trelloData.fecha_nacimiento;
+const hora_nacimiento = body.hora_nacimiento || trelloData.hora_nacimiento;
+const lugar_nacimiento = body.lugar_nacimiento || trelloData.lugar_nacimiento;
 
     if (!nombre || !fecha_nacimiento || !hora_nacimiento || !lugar_nacimiento) {
       return res.status(400).json({
