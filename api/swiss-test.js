@@ -4,6 +4,7 @@
 // No toca data-excel.js ni premium-excel.js.
 
 import sweph from 'sweph';
+import path from 'path';
 
 function numberOrNull(value) {
   const n = Number(value);
@@ -195,6 +196,12 @@ export default async function handler(req, res) {
       min,
       tzone
     });
+
+    try {
+  sweph.set_ephe_path(path.join(process.cwd(), 'ephe'));
+} catch (e) {
+  // Si falla, el raw mostrará el error real.
+}
 
     const SE_GREG_CAL = getConstant('SE_GREG_CAL', 1);
 
