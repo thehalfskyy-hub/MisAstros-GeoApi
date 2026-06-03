@@ -46,16 +46,16 @@ const FONT_MAIN = '&quot;Ruwaya Informal&quot;, &quot;Cormorant Garamond&quot;, 
 function elementBlock({ label, percent, color, x, y, symbol }) {
   const cx = x;
   const cy = y + 100;
-  const radius = 60; // un poco más grande
+  const radius = 70; // un poco más grande
   const arc = describeArcFromBottom(cx, cy, radius, percent);
   const display = roundPercent(percent);
 
   let symbolSvg = '';
 
   // más separación con respecto al círculo
-  const symbolTop = y + 178;
-  const symbolBottom = y + 258;
-  const lineY = y + 216;
+const symbolTop = y + 198;
+const symbolBottom = y + 278;
+const lineY = y + 236;
 
   if (symbol === 'fire') {
     symbolSvg = `
@@ -185,7 +185,7 @@ function buildSvg({ fire, water, air, earth }) {
   })}
 
   <!-- texto con más margen lateral -->
-  <text x="397" y="760" text-anchor="middle"
+  <text x="397" y="720" text-anchor="middle"
     font-family="${FONT_MAIN}"
     font-size="22" font-style="italic" font-weight="400"
     fill="#7b6380">
