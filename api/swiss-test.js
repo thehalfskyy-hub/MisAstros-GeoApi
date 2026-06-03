@@ -1,12 +1,9 @@
 // api/swiss-test.js
-// Prueba técnica con Swiss Ephemeris.
-// Objetivo: calcular Quirón, Nodo Norte medio, Nodo Sur y Lilith Black Moon media.
-// NO toca data-excel.js ni premium-excel.js.
+// Prueba técnica con sweph / Swiss Ephemeris.
+// Calcula puntos premium: Chiron, Mean Node, South Node y Mean Black Moon Lilith.
+// No toca data-excel.js ni premium-excel.js.
 
-import { createRequire } from 'module';
-
-const require = createRequire(import.meta.url);
-const swe = require('swisseph');
+import sweph from 'sweph';
 
 function numberOrNull(value) {
   const n = Number(value);
@@ -20,11 +17,12 @@ function normalizeDegree(deg) {
 }
 
 function formatDegreeInSign(decimalDegree) {
-  const degree = Math.floor(decimalDegree);
-  const minutes = Math.round((decimalDegree - degree) * 60);
+  let degree = Math.floor(decimalDegree);
+  let minutes = Math.round((decimalDegree - degree) * 60);
 
   if (minutes === 60) {
-    return `${degree + 1}°00'`;
+    degree += 1;
+    minutes = 0;
   }
 
   return `${degree}°${String(minutes).padStart(2, '0')}'`;
@@ -59,50 +57,40 @@ function degreeToSignData(fullDegreeRaw) {
   };
 }
 
-function getLongitude(result) {
+function extractLongitude(result) {
   if (!result) return null;
 
-  if (typeof result.longitude === 'number') {
-    return result.longitude;
+  if (typeof result.longitude === 'number') return result.longitude;
+  if (typeof result.lon === 'number') return result.lon;
+
+  if (Array.isArray(result)) {
+    if (typeof result[0] === 'number') return result[0];
+
+    if (Array.isArray(result[0]) && typeof result[0][0] === 'number') {
+      return result[0][0];
+    }
   }
 
   if (Array.isArray(result.xx) && typeof result.xx[0] === 'number') {
     return result.xx[0];
   }
 
-  if (Array.isArray(result) && typeof result[0] === 'number') {
-    return result[0];
+  if (Array.isArray(result.data) && typeof result.data[0] === 'number') {
+    return result.data[0];
+  }
+
+  if (result.data && Array.isArray(result.data.xx) && typeof result.data.xx[0] === 'number') {
+    return result.data.xx[0];
   }
 
   return null;
 }
 
-function calcUt(julianDay, bodyId, bodyName) {
-  return new Promise((resolve, reject) => {
-    const flags =
-      (swe.SEFLG_SWIEPH || 2) |
-      (swe.SEFLG_SPEED || 256);
-
-    swe.swe_calc_ut(julianDay, bodyId, flags, result => {
-      const longitude = getLongitude(result);
-
-      if (longitude === null) {
-        return reject(new Error(`No se pudo calcular ${bodyName}`));
-      }
-
-      resolve({
-        body: bodyName,
-        raw: result,
-        ...degreeToSignData(longitude)
-      });
-    });
-  });
-}
-
 function localBirthToUtcParts({ year, month, day, hour, min, tzone }) {
   /*
-    AstrologyAPI usa tzone como offset de la zona:
-    Uruguay Summer Time = -2 significa local = UTC - 2.
+    tzone viene como offset horario.
+    Ejemplo: Uruguay Summer Time = -2.
+    Local = UTC - 2.
     Entonces UTC = local - tzone.
   */
   const utcMs =
@@ -119,6 +107,43 @@ function localBirthToUtcParts({ year, month, day, hour, min, tzone }) {
     utcMin: d.getUTCMinutes(),
     decimalHour: d.getUTCHours() + d.getUTCMinutes() / 60
   };
+}
+
+function getConstant(name, fallback) {
+  return (
+    sweph?.constants?.[name] ??
+    sweph?.[name] ??
+    fallback
+  );
+}
+
+function calcBody({ julianDay, bodyId, bodyName, flags }) {
+  try {
+    const result = sweph.calc_ut(julianDay, bodyId, flags);
+    const longitude = extractLongitude(result);
+
+    if (longitude === null) {
+      return {
+        ok: false,
+        body: bodyName,
+        error: 'No pude extraer longitude del resultado.',
+        raw: result
+      };
+    }
+
+    return {
+      ok: true,
+      body: bodyName,
+      ...degreeToSignData(longitude),
+      raw: result
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      body: bodyName,
+      error: error.message || String(error)
+    };
+  }
 }
 
 export default async function handler(req, res) {
@@ -162,13 +187,6 @@ export default async function handler(req, res) {
       });
     }
 
-    // Si el paquete trae carpeta de efemérides, la usamos.
-    try {
-      swe.swe_set_ephe_path(`${process.cwd()}/node_modules/swisseph/ephe`);
-    } catch (e) {
-      // No cortamos la ejecución. Si puede calcular igual, sigue.
-    }
-
     const utc = localBirthToUtcParts({
       year,
       month,
@@ -178,37 +196,109 @@ export default async function handler(req, res) {
       tzone
     });
 
-    const julianDay = swe.swe_julday(
+    const SE_GREG_CAL = getConstant('SE_GREG_CAL', 1);
+
+    const julianDay = sweph.julday(
       utc.utcYear,
       utc.utcMonth,
       utc.utcDay,
       utc.decimalHour,
-      swe.SE_GREG_CAL
+      SE_GREG_CAL
     );
 
+    const SEFLG_SPEED = getConstant('SEFLG_SPEED', 256);
+    const SEFLG_SWIEPH = getConstant('SEFLG_SWIEPH', 2);
+    const SEFLG_MOSEPH = getConstant('SEFLG_MOSEPH', 4);
+
+    /*
+      Primero intentamos con SWIEPH.
+      Si faltan archivos de efemérides, puede fallar Chiron.
+      Después, si hace falta, probamos con MOSEPH.
+    */
+    const flagsSwiss = SEFLG_SWIEPH | SEFLG_SPEED;
+    const flagsMoshier = SEFLG_MOSEPH | SEFLG_SPEED;
+
     const BODY = {
-      CHIRON: swe.SE_CHIRON || 15,
-      MEAN_NODE: swe.SE_MEAN_NODE || 10,
-      MEAN_LILITH: swe.SE_MEAN_APOG || 12
+      CHIRON: getConstant('SE_CHIRON', 15),
+      MEAN_NODE: getConstant('SE_MEAN_NODE', 10),
+      MEAN_LILITH: getConstant('SE_MEAN_APOG', 12)
     };
 
-    const [chiron, meanNode, meanLilith] = await Promise.all([
-      calcUt(julianDay, BODY.CHIRON, 'Chiron'),
-      calcUt(julianDay, BODY.MEAN_NODE, 'Mean North Node'),
-      calcUt(julianDay, BODY.MEAN_LILITH, 'Mean Black Moon Lilith')
-    ]);
+    const chironSwiss = calcBody({
+      julianDay,
+      bodyId: BODY.CHIRON,
+      bodyName: 'Chiron',
+      flags: flagsSwiss
+    });
 
-    const southNodeFullDegree = normalizeDegree(meanNode.fullDegree + 180);
-    const southNode = {
-      body: 'Mean South Node',
-      ...degreeToSignData(southNodeFullDegree)
-    };
+    const meanNodeSwiss = calcBody({
+      julianDay,
+      bodyId: BODY.MEAN_NODE,
+      bodyName: 'Mean North Node',
+      flags: flagsSwiss
+    });
+
+    const meanLilithSwiss = calcBody({
+      julianDay,
+      bodyId: BODY.MEAN_LILITH,
+      bodyName: 'Mean Black Moon Lilith',
+      flags: flagsSwiss
+    });
+
+    const chironMoshier = chironSwiss.ok
+      ? null
+      : calcBody({
+          julianDay,
+          bodyId: BODY.CHIRON,
+          bodyName: 'Chiron',
+          flags: flagsMoshier
+        });
+
+    const meanNodeMoshier = meanNodeSwiss.ok
+      ? null
+      : calcBody({
+          julianDay,
+          bodyId: BODY.MEAN_NODE,
+          bodyName: 'Mean North Node',
+          flags: flagsMoshier
+        });
+
+    const meanLilithMoshier = meanLilithSwiss.ok
+      ? null
+      : calcBody({
+          julianDay,
+          bodyId: BODY.MEAN_LILITH,
+          bodyName: 'Mean Black Moon Lilith',
+          flags: flagsMoshier
+        });
+
+    const chiron = chironSwiss.ok ? chironSwiss : chironMoshier;
+    const meanNode = meanNodeSwiss.ok ? meanNodeSwiss : meanNodeMoshier;
+    const meanLilith = meanLilithSwiss.ok ? meanLilithSwiss : meanLilithMoshier;
+
+    let southNode = null;
+
+    if (meanNode && meanNode.ok) {
+      const southNodeFullDegree = normalizeDegree(meanNode.fullDegree + 180);
+
+      southNode = {
+        ok: true,
+        body: 'Mean South Node',
+        ...degreeToSignData(southNodeFullDegree)
+      };
+    } else {
+      southNode = {
+        ok: false,
+        body: 'Mean South Node',
+        error: 'No se pudo calcular porque falló Mean North Node.'
+      };
+    }
 
     return res.status(200).json({
       ok: true,
-      mode: 'swiss_test',
+      mode: 'sweph_swiss_test',
       message:
-        'Prueba técnica con Swiss Ephemeris para puntos premium.',
+        'Prueba técnica con sweph para puntos premium. Comparar contra Astro-Seek.',
       input: {
         local: {
           year,
@@ -221,18 +311,38 @@ export default async function handler(req, res) {
         utc,
         julianDay
       },
+      constants_used: {
+        SE_GREG_CAL,
+        SEFLG_SPEED,
+        SEFLG_SWIEPH,
+        SEFLG_MOSEPH,
+        BODY
+      },
       points: {
         chiron,
         mean_north_node: meanNode,
         mean_south_node: southNode,
         mean_black_moon_lilith: meanLilith
+      },
+      debug_attempts: {
+        swiss: {
+          chiron: chironSwiss,
+          mean_north_node: meanNodeSwiss,
+          mean_black_moon_lilith: meanLilithSwiss
+        },
+        moshier_fallback: {
+          chiron: chironMoshier,
+          mean_north_node: meanNodeMoshier,
+          mean_black_moon_lilith: meanLilithMoshier
+        }
       }
     });
   } catch (error) {
     return res.status(500).json({
       ok: false,
       error: 'Error en swiss-test.js',
-      details: error.message || error
+      details: error.message || error,
+      stack: error.stack || null
     });
   }
 }
