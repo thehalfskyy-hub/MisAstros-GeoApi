@@ -354,6 +354,26 @@ function degreeWithMotion(degree, motion) {
   return motion === "Retrograde" ? `${degree} R` : degree;
 }
 
+function lineItem({ xLabel, xDeg, y, symbol, label, sign, degree, motion }) {
+  const textLeft = `${symbol}  ${label} in ${sign}`;
+  const textRight = degreeWithMotion(degree, motion);
+
+  return `
+    <line x1="${xLabel}" y1="${y + 18}" x2="${xDeg + 35}" y2="${y + 18}"
+      stroke="#e5d9d3" stroke-width="1"/>
+
+    <text x="${xLabel}" y="${y}"
+      font-family="${FONT_MAIN}"
+      font-size="17" font-style="normal" font-weight="500"
+      fill="#6a5b61">${esc(textLeft)}</text>
+
+    <text x="${xDeg}" y="${y}"
+      font-family="${FONT_MAIN}"
+      font-size="15" font-style="normal" font-weight="400"
+      fill="#9b8f8a">${esc(textRight)}</text>
+  `;
+}
+
 function buildSvg({ wheelDataUri, planets }) {
   const width = 794;
   const height = 1123;
@@ -530,178 +550,6 @@ function buildSvg({ wheelDataUri, planets }) {
 </svg>`;
 }
 
-function buildSvg({ wheelDataUri, planets }) {
-  const width = 794;
-  const height = 1123;
-
-  const p = (name) => planets[name] || { sign: "", degree: "", motion: "" };
-
-  const wheelBlock = wheelDataUri
-    ? `
-      <image href="${wheelDataUri}"
-        x="82" y="45" width="630" height="630"
-        preserveAspectRatio="xMidYMid meet"/>
-    `
-    : `
-      <text x="397" y="330" text-anchor="middle"
-        font-family="${FONT_MAIN}" font-size="24"
-        fill="#9b1c1c">No se pudo cargar la rueda astral</text>
-    `;
-
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
-  <rect width="100%" height="100%" fill="#f7eee9"/>
-
-  <!-- ondas decorativas derecha -->
-  <g opacity="0.38" fill="none" stroke="#7b6380" stroke-width="1">
-    ${Array.from({ length: 34 }).map((_, i) => {
-      const x = 720 + i * 3;
-      return `<path d="M ${x} -40 C ${x - 50} 130, ${x + 40} 260, ${x - 10} 430 C ${x - 60} 630, ${x + 30} 840, ${x - 5} 1120"/>`;
-    }).join("\n")}
-  </g>
-
-  <!-- ondas decorativas abajo izquierda -->
-  <g opacity="0.22" fill="none" stroke="#7b6380" stroke-width="1">
-    ${Array.from({ length: 30 }).map((_, i) => {
-      const y = 1010 + i * 5;
-      return `<path d="M -20 ${y} C 120 ${y - 70}, 250 ${y + 70}, 420 ${y - 10}"/>`;
-    }).join("\n")}
-  </g>
-
-  ${wheelBlock}
-
-  <!-- columna izquierda -->
-  ${lineItem({
-    xLabel: 85,
-    xDeg: 300,
-    y: 720,
-    symbol: "☉",
-    label: "Sun",
-    sign: p("Sun").sign,
-    degree: p("Sun").degree,
-    motion: p("Sun").motion
-  })}
-
-  ${lineItem({
-    xLabel: 85,
-    xDeg: 300,
-    y: 775,
-    symbol: "☽",
-    label: "Moon",
-    sign: p("Moon").sign,
-    degree: p("Moon").degree,
-    motion: p("Moon").motion
-  })}
-
-  ${lineItem({
-    xLabel: 85,
-    xDeg: 300,
-    y: 830,
-    symbol: "☿",
-    label: "Mercury",
-    sign: p("Mercury").sign,
-    degree: p("Mercury").degree,
-    motion: p("Mercury").motion
-  })}
-
-  ${lineItem({
-    xLabel: 85,
-    xDeg: 300,
-    y: 885,
-    symbol: "♀",
-    label: "Venus",
-    sign: p("Venus").sign,
-    degree: p("Venus").degree,
-    motion: p("Venus").motion
-  })}
-
-  ${lineItem({
-    xLabel: 85,
-    xDeg: 300,
-    y: 940,
-    symbol: "♂",
-    label: "Mars",
-    sign: p("Mars").sign,
-    degree: p("Mars").degree,
-    motion: p("Mars").motion
-  })}
-
-  <!-- columna derecha -->
-  ${lineItem({
-    xLabel: 410,
-    xDeg: 680,
-    y: 720,
-    symbol: "♃",
-    label: "Jupiter",
-    sign: p("Jupiter").sign,
-    degree: p("Jupiter").degree,
-    motion: p("Jupiter").motion
-  })}
-
-  ${lineItem({
-    xLabel: 410,
-    xDeg: 680,
-    y: 775,
-    symbol: "♄",
-    label: "Saturn",
-    sign: p("Saturn").sign,
-    degree: p("Saturn").degree,
-    motion: p("Saturn").motion
-  })}
-
-  ${lineItem({
-    xLabel: 410,
-    xDeg: 680,
-    y: 830,
-    symbol: "♅",
-    label: "Uranus",
-    sign: p("Uranus").sign,
-    degree: p("Uranus").degree,
-    motion: p("Uranus").motion
-  })}
-
-  ${lineItem({
-    xLabel: 410,
-    xDeg: 680,
-    y: 885,
-    symbol: "♆",
-    label: "Neptune",
-    sign: p("Neptune").sign,
-    degree: p("Neptune").degree,
-    motion: p("Neptune").motion
-  })}
-
-  ${lineItem({
-    xLabel: 410,
-    xDeg: 680,
-    y: 940,
-    symbol: "♇",
-    label: "Pluto",
-    sign: p("Pluto").sign,
-    degree: p("Pluto").degree,
-    motion: p("Pluto").motion
-  })}
-
-  <!-- ascendente -->
-  <line x1="260" y1="1006" x2="535" y2="1006"
-    stroke="#e4d9d3" stroke-width="1"/>
-
-  <text x="240" y="990"
-    font-family="${FONT_MAIN}"
-    font-size="17" font-weight="400"
-    fill="#5d5652">Asc</text>
-
-  <text x="280" y="990"
-    font-family="${FONT_MAIN}"
-    font-size="23" font-weight="600"
-    fill="#5d5652">${esc(`Ascendant in ${p("Ascendant").sign || ""}`)}</text>
-
-  <text x="540" y="990"
-    font-family="${FONT_MAIN}"
-    font-size="18" font-weight="400"
-    fill="#9b918b">${esc(p("Ascendant").degree || "")}</text>
-</svg>`;
-}
 
 module.exports = async (req, res) => {
   try {
