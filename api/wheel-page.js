@@ -394,7 +394,7 @@ const wheelBlock = wheelDataUri
   `;
 
   return `<?xml version="1.0" encoding="UTF-8"?>
-<svg width="430pt" height="607pt" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
+<svg width="405pt" height="572pt" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
   <rect width="100%" height="100%" fill="#f7eee9"/>
 
   <!-- ondas decorativas superior derecha -->
@@ -630,14 +630,14 @@ module.exports = async (req, res) => {
 
     const [planetsData, natalWheelData] = await Promise.all([
       callAstrologyApi("planets/tropical", payload),
-      callAstrologyApi("natal_wheel_chart", payload, {
-        image_type: "svg",
-        chart_size: 1400,
-        sign_background: "#f7eee9",
-        sign_icon_color: "#4f4a46",
-        planet_icon_color: "#4f4a46",
-        inner_circle_background: "#f7eee9"
-      })
+callAstrologyApi("natal_wheel_chart", payload, {
+  image_type: "png",
+  chart_size: 2400,
+  sign_background: "#f7eee9",
+  sign_icon_color: "#4f4a46",
+  planet_icon_color: "#4f4a46",
+  inner_circle_background: "#f7eee9"
+})
     ]);
 
 const wheelSource = extractWheelUrl(natalWheelData);
