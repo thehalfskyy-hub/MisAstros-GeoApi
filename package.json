@@ -3,7 +3,6 @@
     "node": "20.x"
   },
   "dependencies": {
-    "node-gyp": "^10.2.0",
-    "swisseph": "latest"
+    "sweph": "latest"
   }
 }
