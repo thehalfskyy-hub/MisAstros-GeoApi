@@ -393,7 +393,7 @@ function buildSvg({ wheelDataUri, planets }) {
     `;
 
   return `<?xml version="1.0" encoding="UTF-8"?>
-<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
+<svg width="165mm" height="233mm" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
   <rect width="100%" height="100%" fill="#f7eee9"/>
 
   <!-- ondas decorativas superior derecha -->
@@ -631,7 +631,7 @@ module.exports = async (req, res) => {
       callAstrologyApi("planets/tropical", payload),
       callAstrologyApi("natal_wheel_chart", payload, {
         image_type: "svg",
-        chart_size: 500,
+        chart_size: 1400,
         sign_background: "#f7eee9",
         sign_icon_color: "#4f4a46",
         planet_icon_color: "#4f4a46",
