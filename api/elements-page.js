@@ -57,7 +57,7 @@ const symbolTop = y + 205;
 const symbolBottom = y + 292;
 const lineY = y + 248;
 const symbolHalf = 55;
-const symbolStroke = 4;
+const symbolStroke = 2.5;
 
 if (symbol === 'fire') {
   symbolSvg = `
