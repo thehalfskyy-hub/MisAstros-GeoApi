@@ -404,13 +404,13 @@ function buildSvg({ wheelDataUri, planets }) {
     }).join("\n")}
   </g>
 
-  <!-- ondas decorativas inferior izquierda -->
-  <g opacity="0.30" fill="none" stroke="#7b6380" stroke-width="1">
-    ${Array.from({ length: 36 }).map((_, i) => {
-      const y = 1045 + i * 5;
-      return `<path d="M -65 ${y} C 105 ${y - 85}, 245 ${y + 80}, 455 ${y - 15}"/>`;
-    }).join("\n")}
-  </g>
+<!-- ondas decorativas inferior izquierda -->
+<g opacity="0.30" fill="none" stroke="#7b6380" stroke-width="1">
+  ${Array.from({ length: 44 }).map((_, i) => {
+    const y = 1040 + i * 5;
+    return `<path d="M -90 ${y} C 100 ${y - 85}, 260 ${y + 80}, 520 ${y - 10} S 700 ${y - 45}, 850 ${y + 5}"/>`;
+  }).join("\n")}
+</g>
 
   ${wheelBlock}
 
