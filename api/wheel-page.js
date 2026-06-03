@@ -347,7 +347,7 @@ async function wheelSourceToDataUri(source) {
   return `data:${contentType};base64,${buffer.toString("base64")}`;
 }
 
-const FONT_MAIN = 'Georgia, "Times New Roman", serif';
+const FONT_MAIN = 'Georgia, &quot;Times New Roman&quot;, serif';
 
 function degreeWithMotion(degree, motion) {
   if (!degree) return "";
