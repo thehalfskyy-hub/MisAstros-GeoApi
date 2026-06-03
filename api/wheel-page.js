@@ -329,43 +329,23 @@ function extractWheelUrl(wheelData) {
   );
 }
 
-async function wheelSourceToInlineSvg(source) {
+async function wheelSourceToDataUri(source) {
   if (!source) return "";
 
-  let svgText = "";
-
   if (typeof source === "string" && source.trim().startsWith("<svg")) {
-    svgText = source;
-  } else {
-    const response = await fetch(source);
-
-    if (!response.ok) {
-      throw new Error(`No se pudo descargar la rueda: ${response.status}`);
-    }
-
-    svgText = await response.text();
+    return `data:image/svg+xml;base64,${Buffer.from(source).toString("base64")}`;
   }
 
-  // Limpieza para poder incrustarlo dentro de nuestro SVG
-  svgText = svgText
-    .replace(/<\?xml[^>]*\?>/gi, "")
-    .replace(/<!DOCTYPE[^>]*>/gi, "")
-    .trim();
+  const response = await fetch(source);
 
-  // Si el SVG del proveedor trae width/height enormes, dejamos que nuestro contenedor controle el tamaño.
-  svgText = svgText.replace(/<svg\b([^>]*)>/i, (match, attrs) => {
-    let cleanAttrs = attrs
-      .replace(/\swidth="[^"]*"/i, "")
-      .replace(/\sheight="[^"]*"/i, "");
+  if (!response.ok) {
+    throw new Error(`No se pudo descargar la rueda: ${response.status}`);
+  }
 
-    if (!/viewBox=/i.test(cleanAttrs)) {
-      cleanAttrs += ' viewBox="0 0 1400 1400"';
-    }
+  const contentType = response.headers.get("content-type") || "image/svg+xml";
+  const buffer = Buffer.from(await response.arrayBuffer());
 
-    return `<svg${cleanAttrs} width="100%" height="100%" preserveAspectRatio="xMidYMid meet">`;
-  });
-
-  return svgText;
+  return `data:${contentType};base64,${buffer.toString("base64")}`;
 }
 
 const FONT_MAIN = 'Georgia, &quot;Times New Roman&quot;, serif';
@@ -395,17 +375,17 @@ function lineItem({ xLabel, xDeg, y, symbol, label, sign, degree, motion }) {
   `;
 }
 
-function buildSvg({ wheelInlineSvg, planets }) {
+function buildSvg({ wheelDataUri, planets }) {
   const width = 794;
   const height = 1123;
 
   const p = (name) => planets[name] || { sign: "", degree: "", motion: "" };
 
-const wheelBlock = wheelInlineSvg
+const wheelBlock = wheelDataUri
   ? `
-    <svg x="62" y="58" width="670" height="670" viewBox="0 0 1400 1400" preserveAspectRatio="xMidYMid meet">
-      ${wheelInlineSvg}
-    </svg>
+    <image href="${wheelDataUri}"
+      x="62" y="58" width="670" height="670"
+      preserveAspectRatio="xMidYMid meet"/>
   `
   : `
     <text x="397" y="330" text-anchor="middle"
@@ -414,7 +394,7 @@ const wheelBlock = wheelInlineSvg
   `;
 
   return `<?xml version="1.0" encoding="UTF-8"?>
-<svg width="467.72pt" height="660.47pt" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
+<svg width="430pt" height="607pt" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
   <rect width="100%" height="100%" fill="#f7eee9"/>
 
   <!-- ondas decorativas superior derecha -->
@@ -661,9 +641,9 @@ module.exports = async (req, res) => {
     ]);
 
 const wheelSource = extractWheelUrl(natalWheelData);
-const wheelInlineSvg = wheelSource ? await wheelSourceToInlineSvg(wheelSource) : "";
+const wheelDataUri = wheelSource ? await wheelSourceToDataUri(wheelSource) : "";
 const planets = buildPlanetMap(planetsData || []);
-const svg = buildSvg({ wheelInlineSvg, planets });
+const svg = buildSvg({ wheelDataUri, planets });
 
     res.statusCode = 200;
     res.setHeader("Content-Type", "image/svg+xml; charset=utf-8");
