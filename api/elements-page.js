@@ -41,7 +41,7 @@ function roundPercent(value) {
   return Math.round(numberOrDefault(value, 0));
 }
 
-const FONT_MAIN = `"Cormorant Garamond", Georgia, "Times New Roman", serif`;
+const FONT_MAIN = '&quot;Ruwaya Informal&quot;, &quot;Cormorant Garamond&quot;, Georgia, &quot;Times New Roman&quot;, serif';
 
 function elementBlock({ label, percent, color, x, y, symbol }) {
   const cx = x;
@@ -92,7 +92,7 @@ function elementBlock({ label, percent, color, x, y, symbol }) {
   return `
     <g>
       <text x="${x}" y="${y}" text-anchor="middle"
-        font-family=${JSON.stringify(FONT_MAIN)}
+        font-family="${FONT_MAIN}"
         font-size="44" font-style="italic" font-weight="400"
         fill="#7b6380">${label}</text>
 
@@ -104,7 +104,7 @@ function elementBlock({ label, percent, color, x, y, symbol }) {
         stroke-linecap="round"/>
 
       <text x="${cx}" y="${cy + 12}" text-anchor="middle"
-        font-family=${JSON.stringify(FONT_MAIN)}
+        font-family="${FONT_MAIN}"
         font-size="36" font-style="italic" font-weight="400"
         fill="#7b6380">${display}%</text>
 
@@ -144,7 +144,7 @@ function buildSvg({ fire, water, air, earth }) {
   </g>
 
   <text x="397" y="165" text-anchor="middle"
-    font-family=${JSON.stringify(FONT_MAIN)}
+    font-family="${FONT_MAIN}"
     font-size="60" font-style="italic" font-weight="400"
     fill="#7b6380">Balance de elementos</text>
 
@@ -186,7 +186,7 @@ function buildSvg({ fire, water, air, earth }) {
 
   <!-- texto con más margen lateral -->
   <text x="397" y="760" text-anchor="middle"
-    font-family=${JSON.stringify(FONT_MAIN)}
+    font-family="${FONT_MAIN}"
     font-size="22" font-style="italic" font-weight="400"
     fill="#7b6380">
     <tspan x="397" dy="0">En astrología, los elementos (Fuego, Tierra, Aire y Agua)</tspan>
