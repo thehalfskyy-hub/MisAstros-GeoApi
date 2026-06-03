@@ -188,10 +188,9 @@ const location = {
       return data;
     }
 
-const [planetsData, houseCuspsData, natalWheelData] = await Promise.all([
+const [planetsData, houseCuspsData] = await Promise.all([
   callAstrologyApi('planets/tropical'),
-  callAstrologyApi('house_cusps/tropical'),
-  callAstrologyApi('natal_wheel_chart')
+  callAstrologyApi('house_cusps/tropical')
 ]);
 
     function formatDegree(decimalDegree) {
@@ -420,72 +419,6 @@ async function googleTimeZoneForBirth(lat, lon, year, month, day, hour, min) {
       return excel;
     }
 
-function extractWheelUrl(wheelData) {
-  if (!wheelData) return '';
-
-  if (typeof wheelData === 'string') return wheelData;
-
-  return (
-    wheelData.svg ||
-    wheelData.chart_url ||
-    wheelData.image ||
-    wheelData.url ||
-    wheelData.output ||
-    ''
-  );
-}
-
-function buildWheelPageUrl({ wheelChartUrl, sheet, excel }) {
-  const base = 'https://mis-astros-geo-api.vercel.app/api/wheel-page';
-  const params = new URLSearchParams();
-
-  params.set('wheel_url', wheelChartUrl || '');
-
-  params.set('sun_sign', sheet.sun_sign || '');
-  params.set('sun_degree', sheet.sun_degree || '');
-  params.set('sun_motion', sheet.sun_motion || '');
-
-  params.set('moon_sign', sheet.moon_sign || '');
-  params.set('moon_degree', sheet.moon_degree || '');
-  params.set('moon_motion', sheet.moon_motion || '');
-
-  params.set('mercury_sign', sheet.mercury_sign || '');
-  params.set('mercury_degree', sheet.mercury_degree || '');
-  params.set('mercury_motion', sheet.mercury_motion || '');
-
-  params.set('venus_sign', sheet.venus_sign || '');
-  params.set('venus_degree', sheet.venus_degree || '');
-  params.set('venus_motion', sheet.venus_motion || '');
-
-  params.set('mars_sign', sheet.mars_sign || '');
-  params.set('mars_degree', sheet.mars_degree || '');
-  params.set('mars_motion', sheet.mars_motion || '');
-
-  params.set('jupiter_sign', sheet.jupiter_sign || '');
-  params.set('jupiter_degree', sheet.jupiter_degree || '');
-  params.set('jupiter_motion', sheet.jupiter_motion || '');
-
-  params.set('saturn_sign', sheet.saturn_sign || '');
-  params.set('saturn_degree', sheet.saturn_degree || '');
-  params.set('saturn_motion', sheet.saturn_motion || '');
-
-  params.set('uranus_sign', sheet.uranus_sign || '');
-  params.set('uranus_degree', sheet.uranus_degree || '');
-  params.set('uranus_motion', sheet.uranus_motion || '');
-
-  params.set('neptune_sign', sheet.neptune_sign || '');
-  params.set('neptune_degree', sheet.neptune_degree || '');
-  params.set('neptune_motion', sheet.neptune_motion || '');
-
-  params.set('pluto_sign', sheet.pluto_sign || '');
-  params.set('pluto_degree', sheet.pluto_degree || '');
-  params.set('pluto_motion', sheet.pluto_motion || '');
-
-  params.set('asc_sign', sheet.asc_sign || '');
-  params.set('asc_degree', sheet.asc_degree || '');
-
-  return `${base}?${params.toString()}`;
-}
 
     
     function buildSheetNormalData(excel) {
@@ -682,12 +615,6 @@ const sheetNormalData = buildSheetNormalData(excelData);
 const sheetNormalRows = buildSheetNormalRows(sheetNormalData);
 const elementsData = buildElementsData(planetsData);
 
-const wheelChartUrl = extractWheelUrl(natalWheelData);
-const wheelPageUrl = buildWheelPageUrl({
-  wheelChartUrl,
-  sheet: sheetNormalData,
-  excel: excelData
-});
     
 return res.status(200).json({
   ok: true,
@@ -710,14 +637,11 @@ return res.status(200).json({
   sheet_normal: sheetNormalData,
   sheet_normal_rows: sheetNormalRows,
   elements: elementsData,
-  wheel_chart_url: wheelChartUrl,
-  wheel_page_url: wheelPageUrl,
   sent_payload: payload,
   raw: {
-    planets: planetsData,
-    house_cusps: houseCuspsData,
-    natal_wheel_chart: natalWheelData
-  }
+  planets: planetsData,
+  house_cusps: houseCuspsData
+}
 });
     
   } catch (error) {
