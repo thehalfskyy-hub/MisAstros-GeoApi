@@ -131,7 +131,7 @@ function buildSvg({ fire, water, air, earth }) {
   const x4 = 674;
 
   return `<?xml version="1.0" encoding="UTF-8"?>
-<svg width="467.72pt" height="660.47pt" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
+<svg width="405pt" height="572pt" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
   <rect width="100%" height="100%" fill="#f7eee9"/>
 
   <!-- ondas decorativas superiores -->
