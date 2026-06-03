@@ -385,7 +385,7 @@ function lineItem({ xLabel, xDeg, y, symbol, label, sign, degree, motion }) {
 
     <text x="${xLabel}" y="${y}"
       font-family="${FONT_MAIN}"
-      font-size="17" font-style="normal" font-weight="500"
+      font-size="17" font-style="normal" font-weight="400"
       fill="#6a5b61">${esc(textLeft)}</text>
 
     <text x="${xDeg}" y="${y}"
