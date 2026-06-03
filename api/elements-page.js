@@ -12,35 +12,28 @@ function clamp(value, min, max) {
 
 function polarToCartesian(cx, cy, r, angleInDegrees) {
   const angleInRadians = ((angleInDegrees - 90) * Math.PI) / 180.0;
-
   return {
     x: cx + r * Math.cos(angleInRadians),
     y: cy + r * Math.sin(angleInRadians)
   };
 }
 
-function describeArc(cx, cy, r, percent) {
+// arco arrancando desde abajo
+function describeArcFromBottom(cx, cy, r, percent) {
   const p = clamp(Number(percent) || 0, 0, 100);
-
   if (p <= 0) return '';
 
-  const endAngle = p >= 100 ? 359.99 : (p / 100) * 360;
-  const start = polarToCartesian(cx, cy, r, endAngle);
-  const end = polarToCartesian(cx, cy, r, 0);
-  const largeArcFlag = endAngle <= 180 ? '0' : '1';
+  const startAngle = 180; // abajo
+  const sweepAngle = p >= 100 ? 359.99 : (p / 100) * 360;
+  const endAngle = startAngle + sweepAngle;
+
+  const start = polarToCartesian(cx, cy, r, startAngle);
+  const end = polarToCartesian(cx, cy, r, endAngle);
+  const largeArcFlag = sweepAngle <= 180 ? '0' : '1';
 
   return [
-    'M',
-    start.x,
-    start.y,
-    'A',
-    r,
-    r,
-    0,
-    largeArcFlag,
-    0,
-    end.x,
-    end.y
+    'M', start.x, start.y,
+    'A', r, r, 0, largeArcFlag, 1, end.x, end.y
   ].join(' ');
 }
 
@@ -48,43 +41,50 @@ function roundPercent(value) {
   return Math.round(numberOrDefault(value, 0));
 }
 
+const FONT_MAIN = `"Cormorant Garamond", Georgia, "Times New Roman", serif`;
+
 function elementBlock({ label, percent, color, x, y, symbol }) {
   const cx = x;
   const cy = y + 100;
-  const radius = 54;
-  const arc = describeArc(cx, cy, radius, percent);
+  const radius = 60; // un poco más grande
+  const arc = describeArcFromBottom(cx, cy, radius, percent);
   const display = roundPercent(percent);
 
   let symbolSvg = '';
 
+  // más separación con respecto al círculo
+  const symbolTop = y + 178;
+  const symbolBottom = y + 258;
+  const lineY = y + 216;
+
   if (symbol === 'fire') {
     symbolSvg = `
-      <path d="M ${x - 48} ${y + 230} L ${x} ${y + 150} L ${x + 48} ${y + 230} Z"
+      <path d="M ${x - 48} ${symbolBottom} L ${x} ${symbolTop} L ${x + 48} ${symbolBottom} Z"
         fill="none" stroke="#111111" stroke-width="3"/>
     `;
   }
 
   if (symbol === 'water') {
     symbolSvg = `
-      <path d="M ${x - 48} ${y + 150} L ${x} ${y + 230} L ${x + 48} ${y + 150} Z"
+      <path d="M ${x - 48} ${symbolTop} L ${x} ${symbolBottom} L ${x + 48} ${symbolTop} Z"
         fill="none" stroke="#111111" stroke-width="3"/>
-      <line x1="${x - 55}" y1="${y + 188}" x2="${x + 55}" y2="${y + 188}"
+      <line x1="${x - 55}" y1="${lineY}" x2="${x + 55}" y2="${lineY}"
         stroke="#111111" stroke-width="3"/>
     `;
   }
 
   if (symbol === 'air') {
     symbolSvg = `
-      <path d="M ${x - 48} ${y + 230} L ${x} ${y + 150} L ${x + 48} ${y + 230} Z"
+      <path d="M ${x - 48} ${symbolBottom} L ${x} ${symbolTop} L ${x + 48} ${symbolBottom} Z"
         fill="none" stroke="#111111" stroke-width="3"/>
-      <line x1="${x - 55}" y1="${y + 188}" x2="${x + 55}" y2="${y + 188}"
+      <line x1="${x - 55}" y1="${lineY}" x2="${x + 55}" y2="${lineY}"
         stroke="#111111" stroke-width="3"/>
     `;
   }
 
   if (symbol === 'earth') {
     symbolSvg = `
-      <path d="M ${x - 48} ${y + 150} L ${x} ${y + 230} L ${x + 48} ${y + 150} Z"
+      <path d="M ${x - 48} ${symbolTop} L ${x} ${symbolBottom} L ${x + 48} ${symbolTop} Z"
         fill="none" stroke="#111111" stroke-width="3"/>
     `;
   }
@@ -92,18 +92,20 @@ function elementBlock({ label, percent, color, x, y, symbol }) {
   return `
     <g>
       <text x="${x}" y="${y}" text-anchor="middle"
-        font-family="Georgia, serif" font-size="42" font-style="italic"
+        font-family=${JSON.stringify(FONT_MAIN)}
+        font-size="44" font-style="italic" font-weight="400"
         fill="#7b6380">${label}</text>
 
       <circle cx="${cx}" cy="${cy}" r="${radius}"
-        fill="none" stroke="#c9c1bd" stroke-width="4"/>
+        fill="none" stroke="#bdb5b2" stroke-width="3"/>
 
       <path d="${arc}"
-        fill="none" stroke="${color}" stroke-width="7"
+        fill="none" stroke="${color}" stroke-width="5"
         stroke-linecap="round"/>
 
       <text x="${cx}" y="${cy + 12}" text-anchor="middle"
-        font-family="Georgia, serif" font-size="38" font-style="italic"
+        font-family=${JSON.stringify(FONT_MAIN)}
+        font-size="36" font-style="italic" font-weight="400"
         fill="#7b6380">${display}%</text>
 
       ${symbolSvg}
@@ -114,6 +116,12 @@ function elementBlock({ label, percent, color, x, y, symbol }) {
 function buildSvg({ fire, water, air, earth }) {
   const width = 794;
   const height = 1123;
+
+  // posiciones con separación uniforme
+  const x1 = 120;
+  const x2 = 298;
+  const x3 = 496;
+  const x4 = 674;
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
@@ -135,15 +143,16 @@ function buildSvg({ fire, water, air, earth }) {
     }).join('\n')}
   </g>
 
-  <text x="397" y="175" text-anchor="middle"
-    font-family="Georgia, serif" font-size="58" font-style="italic"
+  <text x="397" y="165" text-anchor="middle"
+    font-family=${JSON.stringify(FONT_MAIN)}
+    font-size="60" font-style="italic" font-weight="400"
     fill="#7b6380">Balance de elementos</text>
 
   ${elementBlock({
     label: 'Fuego',
     percent: fire,
     color: '#ff1e1e',
-    x: 110,
+    x: x1,
     y: 285,
     symbol: 'fire'
   })}
@@ -152,7 +161,7 @@ function buildSvg({ fire, water, air, earth }) {
     label: 'Agua',
     percent: water,
     color: '#9484d8',
-    x: 278,
+    x: x2,
     y: 285,
     symbol: 'water'
   })}
@@ -161,7 +170,7 @@ function buildSvg({ fire, water, air, earth }) {
     label: 'Aire',
     percent: air,
     color: '#42c7d9',
-    x: 484,
+    x: x3,
     y: 285,
     symbol: 'air'
   })}
@@ -170,20 +179,23 @@ function buildSvg({ fire, water, air, earth }) {
     label: 'Tierra',
     percent: earth,
     color: '#67bc7a',
-    x: 652,
+    x: x4,
     y: 285,
     symbol: 'earth'
   })}
 
-  <text x="397" y="735" text-anchor="middle"
-    font-family="Georgia, serif" font-size="25" font-style="italic"
+  <!-- texto con más margen lateral -->
+  <text x="397" y="760" text-anchor="middle"
+    font-family=${JSON.stringify(FONT_MAIN)}
+    font-size="22" font-style="italic" font-weight="400"
     fill="#7b6380">
-    <tspan x="397" dy="0">En astrología, los elementos (Fuego, Tierra, Aire y Agua) son</tspan>
-    <tspan x="397" dy="44">fundamentales para entender cómo se manifiestan las energías en</tspan>
-    <tspan x="397" dy="44">tu vida. Cada elemento tiene sus características únicas y juega un</tspan>
-    <tspan x="397" dy="44">papel crucial en la conformación de tu personalidad y</tspan>
-    <tspan x="397" dy="44">comportamiento. Vamos a explorar cómo estos elementos influyen</tspan>
-    <tspan x="397" dy="44">en tu carta astral y en tu vida.</tspan>
+    <tspan x="397" dy="0">En astrología, los elementos (Fuego, Tierra, Aire y Agua)</tspan>
+    <tspan x="397" dy="38">son fundamentales para entender cómo se manifiestan las</tspan>
+    <tspan x="397" dy="38">energías en tu vida. Cada elemento tiene sus</tspan>
+    <tspan x="397" dy="38">características únicas y juega un papel crucial en la</tspan>
+    <tspan x="397" dy="38">conformación de tu personalidad y comportamiento.</tspan>
+    <tspan x="397" dy="38">Vamos a explorar cómo estos elementos influyen en tu</tspan>
+    <tspan x="397" dy="38">carta astral y en tu vida.</tspan>
   </text>
 </svg>`;
 }
