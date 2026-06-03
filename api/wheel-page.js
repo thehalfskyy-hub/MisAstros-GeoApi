@@ -364,18 +364,7 @@ async function wheelSourceToInlineSvg(source) {
     .replace(/font-weight="700"/gi, 'font-weight="300"')
     .replace(/font-weight="600"/gi, 'font-weight="300"');
 
-  /*
-    Hacemos un poco más visibles los strokes muy finitos.
-    Evitamos tocar strokes grandes.
-  */
-  svgText = svgText.replace(/stroke-width="(0\.[1-9]|1)"/g, (match, value) => {
-    const n = Number(value);
-    if (!Number.isFinite(n)) return match;
-    if (n <= 0.6) return 'stroke-width="0.9"';
-    if (n <= 1) return 'stroke-width="1.15"';
-    return match;
-  });
-
+  
   // Inyectamos un CSS de refuerzo dentro del SVG interno.
   svgText = svgText.replace(/<svg\b([^>]*)>/i, (match, attrs) => {
     let cleanAttrs = attrs
