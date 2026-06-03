@@ -414,7 +414,7 @@ const wheelBlock = wheelInlineSvg
   `;
 
   return `<?xml version="1.0" encoding="UTF-8"?>
-<svg width="165mm" height="233mm" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
+<svg width="467.72pt" height="660.47pt" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
   <rect width="100%" height="100%" fill="#f7eee9"/>
 
   <!-- ondas decorativas superior derecha -->
@@ -555,12 +555,12 @@ const wheelBlock = wheelInlineSvg
 
     <text x="250" y="1000"
       font-family="${FONT_MAIN}"
-      font-size="14" font-weight="500"
+      font-size="14" font-weight="400"
       fill="#6a5b61">Asc</text>
 
     <text x="290" y="1000"
       font-family="${FONT_MAIN}"
-      font-size="18" font-weight="600"
+      font-size="18" font-weight="400"
       fill="#6a5b61">${esc(`Ascendant in ${p("Ascendant").sign || ""}`)}</text>
 
     <text x="555" y="1000"
