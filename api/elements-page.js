@@ -46,49 +46,56 @@ const FONT_MAIN = '&quot;Ruwaya Informal&quot;, &quot;Cormorant Garamond&quot;, 
 function elementBlock({ label, percent, color, x, y, symbol }) {
   const cx = x;
   const cy = y + 100;
-  const radius = 70; // un poco más grande
+  const radius = 68; // un poco más grande
   const arc = describeArcFromBottom(cx, cy, radius, percent);
   const display = roundPercent(percent);
 
   let symbolSvg = '';
 
   // más separación con respecto al círculo
-const symbolTop = y + 198;
-const symbolBottom = y + 278;
-const lineY = y + 236;
+const symbolTop = y + 205;
+const symbolBottom = y + 292;
+const lineY = y + 248;
+const symbolHalf = 55;
+const symbolStroke = 4;
 
-  if (symbol === 'fire') {
-    symbolSvg = `
-      <path d="M ${x - 48} ${symbolBottom} L ${x} ${symbolTop} L ${x + 48} ${symbolBottom} Z"
-        fill="none" stroke="#111111" stroke-width="3"/>
-    `;
-  }
+if (symbol === 'fire') {
+  symbolSvg = `
+    <path d="M ${x - symbolHalf} ${symbolBottom} L ${x} ${symbolTop} L ${x + symbolHalf} ${symbolBottom} Z"
+      fill="none" stroke="#111111" stroke-width="${symbolStroke}"
+      stroke-linejoin="round" stroke-linecap="round"/>
+  `;
+}
 
-  if (symbol === 'water') {
-    symbolSvg = `
-      <path d="M ${x - 48} ${symbolTop} L ${x} ${symbolBottom} L ${x + 48} ${symbolTop} Z"
-        fill="none" stroke="#111111" stroke-width="3"/>
-      <line x1="${x - 55}" y1="${lineY}" x2="${x + 55}" y2="${lineY}"
-        stroke="#111111" stroke-width="3"/>
-    `;
-  }
+if (symbol === 'water') {
+  symbolSvg = `
+    <path d="M ${x - symbolHalf} ${symbolTop} L ${x} ${symbolBottom} L ${x + symbolHalf} ${symbolTop} Z"
+      fill="none" stroke="#111111" stroke-width="${symbolStroke}"
+      stroke-linejoin="round" stroke-linecap="round"/>
+    <line x1="${x - symbolHalf - 8}" y1="${lineY}" x2="${x + symbolHalf + 8}" y2="${lineY}"
+      stroke="#111111" stroke-width="${symbolStroke}"
+      stroke-linecap="round"/>
+  `;
+}
 
-  if (symbol === 'air') {
-    symbolSvg = `
-      <path d="M ${x - 48} ${symbolBottom} L ${x} ${symbolTop} L ${x + 48} ${symbolBottom} Z"
-        fill="none" stroke="#111111" stroke-width="3"/>
-      <line x1="${x - 55}" y1="${lineY}" x2="${x + 55}" y2="${lineY}"
-        stroke="#111111" stroke-width="3"/>
-    `;
-  }
+if (symbol === 'air') {
+  symbolSvg = `
+    <path d="M ${x - symbolHalf} ${symbolBottom} L ${x} ${symbolTop} L ${x + symbolHalf} ${symbolBottom} Z"
+      fill="none" stroke="#111111" stroke-width="${symbolStroke}"
+      stroke-linejoin="round" stroke-linecap="round"/>
+    <line x1="${x - symbolHalf - 8}" y1="${lineY}" x2="${x + symbolHalf + 8}" y2="${lineY}"
+      stroke="#111111" stroke-width="${symbolStroke}"
+      stroke-linecap="round"/>
+  `;
+}
 
-  if (symbol === 'earth') {
-    symbolSvg = `
-      <path d="M ${x - 48} ${symbolTop} L ${x} ${symbolBottom} L ${x + 48} ${symbolTop} Z"
-        fill="none" stroke="#111111" stroke-width="3"/>
-    `;
-  }
-
+if (symbol === 'earth') {
+  symbolSvg = `
+    <path d="M ${x - symbolHalf} ${symbolTop} L ${x} ${symbolBottom} L ${x + symbolHalf} ${symbolTop} Z"
+      fill="none" stroke="#111111" stroke-width="${symbolStroke}"
+      stroke-linejoin="round" stroke-linecap="round"/>
+  `;
+}
   return `
     <g>
       <text x="${x}" y="${y}" text-anchor="middle"
