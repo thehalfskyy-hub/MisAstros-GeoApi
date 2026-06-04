@@ -723,15 +723,15 @@ function getAspectColor(symbol) {
 }
 
 function renderAspectTable(aspects) {
-  const startX = 98;
+  const startX = 150;
   const startY = 118;
-  const rowH = 31;
+  const rowH = 27;
 
   const headers = [
     { x: startX, label: 'Planet' },
-    { x: startX + 132, label: 'Aspect' },
-    { x: startX + 296, label: 'Planet' },
-    { x: startX + 445, label: 'Orb' }
+    { x: startX + 135, label: 'Aspect' },
+    { x: startX + 315, label: 'Planet' },
+    { x: startX + 475, label: 'Orb' }
   ];
 
   const rows = aspects.slice(0, 16);
@@ -743,30 +743,30 @@ function renderAspectTable(aspects) {
       `).join('')}
 
       ${rows.map((a, i) => {
-        const y = startY + 35 + i * rowH;
+        const y = startY + 34 + i * rowH;
         const sym = aspectSymbol(a.aspect);
         const color = getAspectColor(sym);
 
         return `
           <g>
-            <text x="${startX}" y="${y}" font-size="18" fill="#272424">${esc(a.planet_1)}</text>
+            <text x="${startX}" y="${y}" font-size="17" fill="#272424">${esc(a.planet_1)}</text>
 
-            <text x="${startX + 132}" y="${y}" font-size="20" fill="${color}" font-weight="700">${esc(sym)}</text>
-            <text x="${startX + 162}" y="${y}" font-size="18" fill="#e67800" font-weight="700" text-decoration="underline">${esc(a.aspect)}</text>
+            <text x="${startX + 135}" y="${y}" font-size="18" fill="${color}" font-weight="700">${esc(sym)}</text>
+            <text x="${startX + 162}" y="${y}" font-size="17" fill="#e67800" font-weight="700" text-decoration="underline">${esc(a.aspect)}</text>
 
-            <text x="${startX + 296}" y="${y}" font-size="18" fill="#272424">${esc(a.planet_2)}</text>
-            <text x="${startX + 445}" y="${y}" font-size="18" fill="#272424">${esc(a.orb)}</text>
+            <text x="${startX + 315}" y="${y}" font-size="17" fill="#272424">${esc(a.planet_2)}</text>
+            <text x="${startX + 475}" y="${y}" font-size="17" fill="#272424">${esc(a.orb)}</text>
           </g>
         `;
       }).join('')}
     </g>
   `;
 }
-
 function renderGrid(gridRows) {
-  const startX = 150;
-  const startY = 645;
-  const cell = 30;
+  const cell = 23;
+  const gridWidth = gridRows.length * cell;
+  const startX = (794 - gridWidth) / 2;
+  const startY = 585;
 
   let out = `
     <g>
@@ -788,9 +788,9 @@ function renderGrid(gridRows) {
 
       if (value) {
         out += `
-          <text x="${x + cell / 2}" y="${y + 20}"
+          <text x="${x + cell / 2}" y="${y + 16}"
             text-anchor="middle"
-            font-size="${String(value).length > 1 ? 11 : 18}"
+            font-size="${String(value).length > 1 ? 9 : 15}"
             font-weight="${isDiag ? '700' : '500'}"
             fill="${isDiag ? '#4b4646' : getAspectColor(value)}">${esc(value)}</text>
         `;
@@ -836,7 +836,7 @@ function buildSvg({ aspects, gridRows }) {
     ${renderAspectTable(aspects)}
   </g>
 
-  <line x1="120" y1="590" x2="675" y2="590" stroke="#d7cbc6" stroke-width="1"/>
+<line x1="120" y1="550" x2="675" y2="550" stroke="#d7cbc6" stroke-width="1"/>
 
   <g font-family="Arial, Helvetica, sans-serif">
     ${renderGrid(gridRows)}
