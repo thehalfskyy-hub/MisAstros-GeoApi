@@ -686,6 +686,44 @@ function smallestAngularDistance(a, b) {
   return raw > 180 ? 360 - raw : raw;
 }
 
+function planetSymbol(name) {
+  const map = {
+    Sun: '☉',
+    Moon: '☽',
+    Mercury: '☿',
+    Venus: '♀',
+    Mars: '♂',
+    Jupiter: '♃',
+    Saturn: '♄',
+    Uranus: '♅',
+    Neptune: '♆',
+    Pluto: '♇',
+    'North Node': '☊',
+    'South Node': '☋',
+    Lilith: '⚸',
+    Chiron: '⚷',
+    'Part of Fortune': '⊗',
+    Vertex: 'Vx',
+    Ascendant: 'ASC',
+    Midheaven: 'MC'
+  };
+
+  return map[name] || name;
+}
+
+function aspectSymbol(aspectName) {
+  const map = {
+    Conjunction: '☌',
+    Sextile: '✶',
+    Square: '□',
+    Trine: '△',
+    Opposition: '☍'
+  };
+
+  return map[aspectName] || '';
+}
+
+
 function aspectNature(aspectName) {
   const map = {
     Conjunction: 'neutral',
@@ -801,6 +839,188 @@ function buildBodiesForAspects({ planetsData }) {
       Number.isFinite(Number(b.fullDegree))
   );
 }
+
+
+function buildBodiesForAspectGrid({ planetsData, premiumPoints, houseCuspsData }) {
+  const bodies = [];
+
+  const planetOrder = [
+    'Sun',
+    'Moon',
+    'Mercury',
+    'Venus',
+    'Mars',
+    'Jupiter',
+    'Saturn',
+    'Uranus',
+    'Neptune',
+    'Pluto'
+  ];
+
+  for (const name of planetOrder) {
+    const planet = findPlanet(planetsData, name);
+    if (planet) bodies.push(planetToAspectBody(planet));
+  }
+
+  const midheavenDegree = normalizeDegree(houseCuspsData?.midheaven);
+  const ascendant = findPlanet(planetsData, 'Ascendant');
+
+  if (premiumPoints.mean_north_node?.ok) {
+    bodies.push({
+      name: 'North Node',
+      type: 'point',
+      sign: premiumPoints.mean_north_node.sign || '',
+      degree: premiumPoints.mean_north_node.degree || '',
+      house: premiumPoints.mean_north_node.house || '',
+      fullDegree: premiumPoints.mean_north_node.fullDegree,
+      motion: premiumPoints.mean_north_node.motion || ''
+    });
+  }
+
+  if (premiumPoints.mean_black_moon_lilith?.ok) {
+    bodies.push({
+      name: 'Lilith',
+      type: 'point',
+      sign: premiumPoints.mean_black_moon_lilith.sign || '',
+      degree: premiumPoints.mean_black_moon_lilith.degree || '',
+      house: premiumPoints.mean_black_moon_lilith.house || '',
+      fullDegree: premiumPoints.mean_black_moon_lilith.fullDegree,
+      motion: premiumPoints.mean_black_moon_lilith.motion || ''
+    });
+  }
+
+  if (premiumPoints.chiron?.ok) {
+    bodies.push({
+      name: 'Chiron',
+      type: 'point',
+      sign: premiumPoints.chiron.sign || '',
+      degree: premiumPoints.chiron.degree || '',
+      house: premiumPoints.chiron.house || '',
+      fullDegree: premiumPoints.chiron.fullDegree,
+      motion: premiumPoints.chiron.motion || ''
+    });
+  }
+
+  if (premiumPoints.part_of_fortune?.ok) {
+    bodies.push({
+      name: 'Part of Fortune',
+      type: 'point',
+      sign: premiumPoints.part_of_fortune.sign || '',
+      degree: premiumPoints.part_of_fortune.degree || '',
+      house: premiumPoints.part_of_fortune.house || '',
+      fullDegree: premiumPoints.part_of_fortune.fullDegree,
+      motion: ''
+    });
+  }
+
+  if (premiumPoints.vertex?.ok) {
+    bodies.push({
+      name: 'Vertex',
+      type: 'point',
+      sign: premiumPoints.vertex.sign || '',
+      degree: premiumPoints.vertex.degree || '',
+      house: premiumPoints.vertex.house || '',
+      fullDegree: premiumPoints.vertex.fullDegree,
+      motion: ''
+    });
+  }
+
+  if (ascendant) {
+    bodies.push({
+      name: 'Ascendant',
+      type: 'angle',
+      sign: ascendant.sign || '',
+      degree: formatDegreeInSign(Number(ascendant.normDegree) || 0),
+      house: ascendant.house || 1,
+      fullDegree: normalizeDegree(ascendant.fullDegree),
+      motion: ''
+    });
+  }
+
+  bodies.push({
+    name: 'Midheaven',
+    type: 'angle',
+    ...degreeToSignData(midheavenDegree),
+    house: findHouseForDegree(midheavenDegree, houseCuspsData),
+    motion: ''
+  });
+
+  return bodies.filter(
+    b =>
+      b &&
+      b.name &&
+      Number.isFinite(Number(b.fullDegree))
+  );
+}
+
+function findAspectBetween(bodyA, bodyB) {
+  const ASPECTS = [
+    { name: 'Conjunction', angle: 0 },
+    { name: 'Sextile', angle: 60 },
+    { name: 'Square', angle: 90 },
+    { name: 'Trine', angle: 120 },
+    { name: 'Opposition', angle: 180 }
+  ];
+
+  const separation = smallestAngularDistance(bodyA.fullDegree, bodyB.fullDegree);
+
+  /*
+    Para la matriz usamos orbes un poco más amplios, parecido a Astro-Seek.
+    Si querés más estricto después lo bajamos.
+  */
+  const maxOrb = bodyA.type === 'point' || bodyB.type === 'point'
+    ? 4
+    : orbLimitForBodies(bodyA, bodyB);
+
+  for (const aspect of ASPECTS) {
+    const orb = Math.abs(separation - aspect.angle);
+
+    if (orb <= maxOrb) {
+      return {
+        name: aspect.name,
+        symbol: aspectSymbol(aspect.name),
+        orb,
+        orbFormatted: formatOrb(orb)
+      };
+    }
+  }
+
+  return null;
+}
+
+function buildAspectGridRows(bodies) {
+  /*
+    Devuelve una matriz triangular:
+    diagonal = símbolo del cuerpo
+    debajo de diagonal = símbolo del aspecto si existe
+    encima de diagonal = vacío
+  */
+  const rows = [];
+
+  for (let i = 0; i < bodies.length; i++) {
+    const row = [];
+
+    for (let j = 0; j < bodies.length; j++) {
+      if (j > i) {
+        row.push('');
+        continue;
+      }
+
+      if (i === j) {
+        row.push(planetSymbol(bodies[i].name));
+        continue;
+      }
+
+      const aspect = findAspectBetween(bodies[i], bodies[j]);
+      row.push(aspect ? aspect.symbol : '');
+    }
+
+    rows.push(row);
+  }
+
+  return rows;
+}
+
 
 function flattenPlanetToExcel(prefix, planet) {
   if (!planet) return {};
@@ -1111,6 +1331,13 @@ export default async function handler(req, res) {
 
     const aspectBodies = buildBodiesForAspects({ planetsData });
     const aspects = calculateAspects(aspectBodies);
+    const aspectGridBodies = buildBodiesForAspectGrid({
+  planetsData,
+  premiumPoints,
+  houseCuspsData
+});
+
+const sheetAspectGridRows = buildAspectGridRows(aspectGridBodies);
 
     const elementsData = buildElementsData(planetsData);
     const excelData = buildExcelObject({
@@ -1172,6 +1399,8 @@ export default async function handler(req, res) {
       sheet_premium_planets_rows: sheetPremiumPlanetsRows,
       sheet_premium_points_rows: sheetPremiumPointsRows,
       sheet_aspects_rows: sheetAspectsRows,
+      sheet_aspect_grid_rows: sheetAspectGridRows,
+aspect_grid_bodies: aspectGridBodies,
       sheet_house_rows: sheetHouseRows,
 
       /*
