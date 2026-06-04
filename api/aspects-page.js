@@ -716,10 +716,10 @@ function buildAspectGridRows(bodies) {
 }
 
 function getAspectColor(symbol) {
-  if (symbol === '△' || symbol === '✶') return '#3f63c8';
-  if (symbol === '□' || symbol === '☍') return '#b85c5c';
-  if (symbol === '☌') return '#5d5a5a';
-  return '#8b8585';
+  if (symbol === '△' || symbol === '✶') return '#2f55e7';
+  if (symbol === '□' || symbol === '☍') return '#e53935';
+  if (symbol === '☌') return '#4a4747';
+  return '#7a7373';
 }
 
 function renderAspectTable(aspects) {
@@ -765,29 +765,12 @@ function renderAspectTable(aspects) {
 
 
 function renderGrid(gridRows) {
-  const cell = 24;
+  const cell = 27;
   const gridWidth = gridRows.length * cell;
-  const gridHeight = gridRows.length * cell;
-  const startX = (794 - gridWidth) / 2;
-  const startY = 565;
+  const startX = (794 - gridWidth) / 2 - 8;
+  const startY = 560;
 
-  const panelPadX = 22;
-  const panelPadY = 18;
-
-  let out = `
-    <g>
-      <rect
-        x="${startX - panelPadX}"
-        y="${startY - panelPadY}"
-        width="${gridWidth + panelPadX * 2}"
-        height="${gridHeight + panelPadY * 2}"
-        rx="18"
-        ry="18"
-        fill="#fbf6f3"
-        stroke="#ded3cd"
-        stroke-width="1.2"
-      />
-  `;
+  let out = `<g>`;
 
   for (let i = 0; i < gridRows.length; i++) {
     for (let j = 0; j <= i; j++) {
@@ -802,23 +785,23 @@ function renderGrid(gridRows) {
           y="${y}"
           width="${cell}"
           height="${cell}"
-          rx="2"
-          ry="2"
-          fill="${isDiag ? '#f4eeea' : '#fffaf8'}"
-          stroke="#cfc6c1"
-          stroke-width="1"
+          fill="#fbf8f6"
+          stroke="#bdb6b2"
+          stroke-width="${isDiag ? 1.3 : 1}"
         />
       `;
 
       if (value) {
+        const isLong = String(value).length > 1;
+
         out += `
           <text
             x="${x + cell / 2}"
-            y="${y + 16}"
+            y="${y + (isLong ? 17 : 18)}"
             text-anchor="middle"
-            font-size="${String(value).length > 1 ? 9.5 : 15}"
+            font-size="${isDiag ? (isLong ? 9.5 : 18) : (isLong ? 10 : 18)}"
             font-weight="${isDiag ? '700' : '500'}"
-            fill="${isDiag ? '#4b4646' : getAspectColor(value)}"
+            fill="${isDiag ? '#2f2c2c' : getAspectColor(value)}"
           >${esc(value)}</text>
         `;
       }
