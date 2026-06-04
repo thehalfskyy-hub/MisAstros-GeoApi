@@ -752,7 +752,7 @@ function renderAspectTable(aspects) {
             <text x="${startX}" y="${y}" font-size="17" fill="#272424">${esc(a.planet_1)}</text>
 
             <text x="${startX + 135}" y="${y}" font-size="18" fill="${color}" font-weight="700">${esc(sym)}</text>
-            <text x="${startX + 162}" y="${y}" font-size="17" fill="#e67800" font-weight="700" text-decoration="underline">${esc(a.aspect)}</text>
+            <text x="${startX + 162}" y="${y}" font-size="17" fill="#e67800" font-weight="700">${esc(a.aspect)}</text>
 
             <text x="${startX + 315}" y="${y}" font-size="17" fill="#272424">${esc(a.planet_2)}</text>
             <text x="${startX + 475}" y="${y}" font-size="17" fill="#272424">${esc(a.orb)}</text>
@@ -762,14 +762,31 @@ function renderAspectTable(aspects) {
     </g>
   `;
 }
+
+
 function renderGrid(gridRows) {
-  const cell = 23;
+  const cell = 24;
   const gridWidth = gridRows.length * cell;
+  const gridHeight = gridRows.length * cell;
   const startX = (794 - gridWidth) / 2;
-  const startY = 585;
+  const startY = 565;
+
+  const panelPadX = 22;
+  const panelPadY = 18;
 
   let out = `
     <g>
+      <rect
+        x="${startX - panelPadX}"
+        y="${startY - panelPadY}"
+        width="${gridWidth + panelPadX * 2}"
+        height="${gridHeight + panelPadY * 2}"
+        rx="18"
+        ry="18"
+        fill="#fbf6f3"
+        stroke="#ded3cd"
+        stroke-width="1.2"
+      />
   `;
 
   for (let i = 0; i < gridRows.length; i++) {
@@ -780,19 +797,29 @@ function renderGrid(gridRows) {
       const isDiag = i === j;
 
       out += `
-        <rect x="${x}" y="${y}" width="${cell}" height="${cell}"
-          fill="${isDiag ? '#f7f1ee' : '#fffaf7'}"
-          stroke="#c9c1bd"
-          stroke-width="1"/>
+        <rect
+          x="${x}"
+          y="${y}"
+          width="${cell}"
+          height="${cell}"
+          rx="2"
+          ry="2"
+          fill="${isDiag ? '#f4eeea' : '#fffaf8'}"
+          stroke="#cfc6c1"
+          stroke-width="1"
+        />
       `;
 
       if (value) {
         out += `
-          <text x="${x + cell / 2}" y="${y + 16}"
+          <text
+            x="${x + cell / 2}"
+            y="${y + 16}"
             text-anchor="middle"
-            font-size="${String(value).length > 1 ? 9 : 15}"
+            font-size="${String(value).length > 1 ? 9.5 : 15}"
             font-weight="${isDiag ? '700' : '500'}"
-            fill="${isDiag ? '#4b4646' : getAspectColor(value)}">${esc(value)}</text>
+            fill="${isDiag ? '#4b4646' : getAspectColor(value)}"
+          >${esc(value)}</text>
         `;
       }
     }
@@ -802,6 +829,7 @@ function renderGrid(gridRows) {
 
   return out;
 }
+
 
 function buildSvg({ aspects, gridRows }) {
   const width = 794;
@@ -836,7 +864,7 @@ function buildSvg({ aspects, gridRows }) {
     ${renderAspectTable(aspects)}
   </g>
 
-<line x1="120" y1="550" x2="675" y2="550" stroke="#d7cbc6" stroke-width="1"/>
+
 
   <g font-family="Arial, Helvetica, sans-serif">
     ${renderGrid(gridRows)}
