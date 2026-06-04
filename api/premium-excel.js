@@ -518,6 +518,44 @@ function buildPremiumPointRows(points) {
   ];
 }
 
+
+function buildHouseRows(houseCuspsData) {
+  const houses = Array.isArray(houseCuspsData?.houses)
+    ? houseCuspsData.houses
+    : [];
+
+  return houses
+    .sort((a, b) => Number(a.house) - Number(b.house))
+    .map(house => {
+      const houseNumber = Number(house.house);
+      let sign = house.sign || '';
+      const degreeData = degreeToSignData(house.degree || 0);
+
+      if (houseNumber === 1) {
+        sign = `${sign} (ASC)`;
+      }
+
+      if (houseNumber === 4) {
+        sign = `${sign} (IC)`;
+      }
+
+      if (houseNumber === 7) {
+        sign = `${sign} (DESC)`;
+      }
+
+      if (houseNumber === 10) {
+        sign = `${sign} (MC)`;
+      }
+
+      return [
+        houseNumber,
+        sign,
+        degreeData.degree
+      ];
+    });
+}
+
+
 function buildElementsData(planets) {
   const signElements = {
     Aries: 'fire',
@@ -1084,6 +1122,8 @@ export default async function handler(req, res) {
     const sheetPremiumPlanetsRows = buildPremiumPlanetRows(planetsData);
     const sheetPremiumPointsRows = buildPremiumPointRows(premiumPoints);
     const sheetAspectsRows = buildAspectRows(aspects);
+    const sheetHouseRows = buildHouseRows(houseCuspsData);
+    
 
     return res.status(200).json({
       ok: true,
@@ -1132,6 +1172,7 @@ export default async function handler(req, res) {
       sheet_premium_planets_rows: sheetPremiumPlanetsRows,
       sheet_premium_points_rows: sheetPremiumPointsRows,
       sheet_aspects_rows: sheetAspectsRows,
+      sheet_house_rows: sheetHouseRows,
 
       /*
         Por si querés llenar todo junto en una sola tabla:
