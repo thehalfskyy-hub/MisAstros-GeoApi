@@ -608,7 +608,12 @@ function buildAspectRows(aspects) {
   ]);
 }
 
-function buildBodiesForAspects({ planetsData, houseCuspsData, premiumPoints }) {
+function buildBodiesForAspects({ planetsData }) {
+  /*
+    Para imitar "Main aspects" de Astro-Seek:
+    usamos solo planetas principales.
+    No incluimos ASC, MC, Vertex, Chiron, Lilith, Nodos ni Fortuna.
+  */
   const baseOrder = [
     'Sun',
     'Moon',
@@ -619,8 +624,7 @@ function buildBodiesForAspects({ planetsData, houseCuspsData, premiumPoints }) {
     'Saturn',
     'Uranus',
     'Neptune',
-    'Pluto',
-    'Ascendant'
+    'Pluto'
   ];
 
   const bodies = [];
@@ -629,29 +633,6 @@ function buildBodiesForAspects({ planetsData, houseCuspsData, premiumPoints }) {
     const planet = findPlanet(planetsData, name);
     if (planet) bodies.push(planetToAspectBody(planet));
   }
-
-  const midheavenDegree = normalizeDegree(houseCuspsData?.midheaven);
-  const vertexDegree = normalizeDegree(houseCuspsData?.vertex);
-
-  const midheaven = buildCalculatedPoint({
-    body: 'Midheaven',
-    fullDegree: midheavenDegree,
-    houseCuspsData
-  });
-
-  const vertex = buildCalculatedPoint({
-    body: 'Vertex',
-    fullDegree: vertexDegree,
-    houseCuspsData
-  });
-
-  bodies.push(pointToAspectBody(midheaven, 'Midheaven'));
-  bodies.push(pointToAspectBody(premiumPoints.chiron, 'Chiron'));
-  bodies.push(pointToAspectBody(premiumPoints.mean_black_moon_lilith, 'Lilith'));
-  bodies.push(pointToAspectBody(premiumPoints.mean_north_node, 'North Node'));
-  bodies.push(pointToAspectBody(premiumPoints.mean_south_node, 'South Node'));
-  bodies.push(pointToAspectBody(premiumPoints.part_of_fortune, 'Part of Fortune'));
-  bodies.push(pointToAspectBody(vertex, 'Vertex'));
 
   return bodies.filter(
     b =>
@@ -859,11 +840,9 @@ export default async function handler(req, res) {
       part_of_fortune: partOfFortune
     };
 
-    const bodies = buildBodiesForAspects({
-      planetsData,
-      houseCuspsData,
-      premiumPoints
-    });
+const bodies = buildBodiesForAspects({
+  planetsData
+});
 
     const aspects = calculateAspects(bodies);
 
