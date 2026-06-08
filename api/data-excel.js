@@ -19,32 +19,32 @@ export default async function handler(req, res) {
       });
     }
 
-function extractFromTrelloText(text) {
-  const safeText = String(text || '');
+    function extractFromTrelloText(text) {
+      const safeText = String(text || '');
 
-  function getValue(label) {
-    const regex = new RegExp(`${label}:\\s*(.+)`, 'i');
-    const match = safeText.match(regex);
-    return match ? match[1].trim() : '';
-  }
+      function getValue(label) {
+        const regex = new RegExp(`${label}:\\s*(.+)`, 'i');
+        const match = safeText.match(regex);
+        return match ? match[1].trim() : '';
+      }
 
-  return {
-    nombre: getValue('Nombre'),
-    fecha_nacimiento: getValue('Fecha de nacimiento'),
-    hora_nacimiento: getValue('Hora de nacimiento'),
-    lugar_nacimiento: getValue('Lugar de nacimiento')
-  };
-}
+      return {
+        nombre: getValue('Nombre'),
+        fecha_nacimiento: getValue('Fecha de nacimiento'),
+        hora_nacimiento: getValue('Hora de nacimiento'),
+        lugar_nacimiento: getValue('Lugar de nacimiento')
+      };
+    }
 
-const body = req.body || {};
-const trelloData = body.trello_text
-  ? extractFromTrelloText(body.trello_text)
-  : {};
+    const body = req.body || {};
+    const trelloData = body.trello_text
+      ? extractFromTrelloText(body.trello_text)
+      : {};
 
-const nombre = body.nombre || trelloData.nombre;
-const fecha_nacimiento = body.fecha_nacimiento || trelloData.fecha_nacimiento;
-const hora_nacimiento = body.hora_nacimiento || trelloData.hora_nacimiento;
-const lugar_nacimiento = body.lugar_nacimiento || trelloData.lugar_nacimiento;
+    const nombre = body.nombre || trelloData.nombre;
+    const fecha_nacimiento = body.fecha_nacimiento || trelloData.fecha_nacimiento;
+    const hora_nacimiento = body.hora_nacimiento || trelloData.hora_nacimiento;
+    const lugar_nacimiento = body.lugar_nacimiento || trelloData.lugar_nacimiento;
 
     if (!nombre || !fecha_nacimiento || !hora_nacimiento || !lugar_nacimiento) {
       return res.status(400).json({
@@ -100,41 +100,41 @@ const lugar_nacimiento = body.lugar_nacimiento || trelloData.lugar_nacimiento;
       });
     }
 
-let geo;
-let timezoneData;
+    let geo;
+    let timezoneData;
 
-try {
-  geo = await ocGeocode(lugar_nacimiento);
+    try {
+      geo = await ocGeocode(lugar_nacimiento);
 
-  timezoneData = await googleTimeZoneForBirth(
-    geo.lat,
-    geo.lon,
-    year,
-    month,
-    day,
-    hour,
-    min
-  );
-} catch (error) {
-  return res.status(error.status || 400).json({
-    ok: false,
-    error: 'Error resolviendo lugar o zona horaria.',
-    lugar_nacimiento,
-    details: error.detail || error.message || error
-  });
-}
+      timezoneData = await googleTimeZoneForBirth(
+        geo.lat,
+        geo.lon,
+        year,
+        month,
+        day,
+        hour,
+        min
+      );
+    } catch (error) {
+      return res.status(error.status || 400).json({
+        ok: false,
+        error: 'Error resolviendo lugar o zona horaria.',
+        lugar_nacimiento,
+        details: error.detail || error.message || error
+      });
+    }
 
-const location = {
-  lat: geo.lat,
-  lon: geo.lon,
-  tzone: timezoneData.tzone,
-  formatted: geo.formatted,
-  city: geo.city,
-  state: geo.state,
-  country: geo.country,
-  timezoneId: timezoneData.timezoneId,
-  timezoneName: timezoneData.timezoneName
-};
+    const location = {
+      lat: geo.lat,
+      lon: geo.lon,
+      tzone: timezoneData.tzone,
+      formatted: geo.formatted,
+      city: geo.city,
+      state: geo.state,
+      country: geo.country,
+      timezoneId: timezoneData.timezoneId,
+      timezoneName: timezoneData.timezoneName
+    };
 
     const userId = process.env.ASTRO_USER_ID;
     const apiKey = process.env.ASTRO_API_KEY;
@@ -188,10 +188,10 @@ const location = {
       return data;
     }
 
-const [planetsData, houseCuspsData] = await Promise.all([
-  callAstrologyApi('planets/tropical'),
-  callAstrologyApi('house_cusps/tropical')
-]);
+    const [planetsData, houseCuspsData] = await Promise.all([
+      callAstrologyApi('planets/tropical'),
+      callAstrologyApi('house_cusps/tropical')
+    ]);
 
     function formatDegree(decimalDegree) {
       const degree = Math.floor(decimalDegree);
@@ -213,108 +213,100 @@ const [planetsData, houseCuspsData] = await Promise.all([
       return String(hourString).replace(':', '.');
     }
 
+    async function ocGeocode(place) {
+      const key = process.env.OPENCAGE_KEY;
 
+      if (!key) {
+        const e = new Error('Falta OPENCAGE_KEY en Vercel.');
+        e.status = 500;
+        throw e;
+      }
 
+      const url =
+        'https://api.opencagedata.com/geocode/v1/json?q=' +
+        encodeURIComponent(place) +
+        `&key=${key}&limit=1&language=es&no_annotations=0`;
 
-async function ocGeocode(place) {
-  const key = process.env.OPENCAGE_KEY;
+      const response = await fetch(url);
 
-  if (!key) {
-    const e = new Error('Falta OPENCAGE_KEY en Vercel.');
-    e.status = 500;
-    throw e;
-  }
+      if (!response.ok) {
+        const e = new Error(`OpenCage error ${response.status}`);
+        e.status = response.status;
+        throw e;
+      }
 
-  const url =
-    'https://api.opencagedata.com/geocode/v1/json?q=' +
-    encodeURIComponent(place) +
-    `&key=${key}&limit=1&language=es&no_annotations=0`;
+      const data = await response.json();
+      const result = data.results && data.results[0];
 
-  const response = await fetch(url);
+      if (!result) {
+        const e = new Error('Lugar no encontrado.');
+        e.status = 400;
+        throw e;
+      }
 
-  if (!response.ok) {
-    const e = new Error(`OpenCage error ${response.status}`);
-    e.status = response.status;
-    throw e;
-  }
+      return {
+        lat: result.geometry.lat,
+        lon: result.geometry.lng,
+        formatted: result.formatted || place,
+        city:
+          result.components?.city ||
+          result.components?.town ||
+          result.components?.village ||
+          '',
+        state: result.components?.state || '',
+        country: result.components?.country || ''
+      };
+    }
 
-  const data = await response.json();
-  const result = data.results && data.results[0];
+    async function googleTimeZoneForBirth(lat, lon, year, month, day, hour, min) {
+      const key = process.env.GOOGLE_API_KEY || process.env.GOOGLE_TZ_KEY;
 
-  if (!result) {
-    const e = new Error('Lugar no encontrado.');
-    e.status = 400;
-    throw e;
-  }
+      if (!key) {
+        const e = new Error('Falta GOOGLE_API_KEY o GOOGLE_TZ_KEY en Vercel.');
+        e.status = 500;
+        throw e;
+      }
 
-  return {
-    lat: result.geometry.lat,
-    lon: result.geometry.lng,
-    formatted: result.formatted || place,
-    city:
-      result.components?.city ||
-      result.components?.town ||
-      result.components?.village ||
-      '',
-    state: result.components?.state || '',
-    country: result.components?.country || ''
-  };
-}
+      /*
+        Usamos la fecha/hora de nacimiento para que Google devuelva
+        el offset correcto de ese momento, incluyendo horario de verano.
+      */
+      const timestamp = Math.floor(
+        Date.UTC(year, month - 1, day, hour || 12, min || 0) / 1000
+      );
 
-async function googleTimeZoneForBirth(lat, lon, year, month, day, hour, min) {
-  const key = process.env.GOOGLE_API_KEY || process.env.GOOGLE_TZ_KEY;
+      const url =
+        `https://maps.googleapis.com/maps/api/timezone/json?location=${lat},${lon}` +
+        `&timestamp=${timestamp}&key=${key}`;
 
-  if (!key) {
-    const e = new Error('Falta GOOGLE_API_KEY o GOOGLE_TZ_KEY en Vercel.');
-    e.status = 500;
-    throw e;
-  }
+      const response = await fetch(url);
 
-  /*
-    Usamos la fecha/hora de nacimiento para que Google devuelva
-    el offset correcto de ese momento, incluyendo horario de verano.
-  */
-  const timestamp = Math.floor(
-    Date.UTC(year, month - 1, day, hour || 12, min || 0) / 1000
-  );
+      if (!response.ok) {
+        const e = new Error(`Google Time Zone error ${response.status}`);
+        e.status = response.status;
+        throw e;
+      }
 
-  const url =
-    `https://maps.googleapis.com/maps/api/timezone/json?location=${lat},${lon}` +
-    `&timestamp=${timestamp}&key=${key}`;
+      const data = await response.json();
 
-  const response = await fetch(url);
+      if (data.status !== 'OK') {
+        const e = new Error(`Google Time Zone status: ${data.status}`);
+        e.status = 502;
+        e.detail = data;
+        throw e;
+      }
 
-  if (!response.ok) {
-    const e = new Error(`Google Time Zone error ${response.status}`);
-    e.status = response.status;
-    throw e;
-  }
+      const totalOffsetSeconds = (data.rawOffset || 0) + (data.dstOffset || 0);
 
-  const data = await response.json();
+      return {
+        tzone: totalOffsetSeconds / 3600,
+        timezoneId: data.timeZoneId || '',
+        timezoneName: data.timeZoneName || '',
+        rawOffset: data.rawOffset || 0,
+        dstOffset: data.dstOffset || 0
+      };
+    }
 
-  if (data.status !== 'OK') {
-    const e = new Error(`Google Time Zone status: ${data.status}`);
-    e.status = 502;
-    e.detail = data;
-    throw e;
-  }
-
-  const totalOffsetSeconds = (data.rawOffset || 0) + (data.dstOffset || 0);
-
-  return {
-    tzone: totalOffsetSeconds / 3600,
-    timezoneId: data.timeZoneId || '',
-    timezoneName: data.timeZoneName || '',
-    rawOffset: data.rawOffset || 0,
-    dstOffset: data.dstOffset || 0
-  };
-}
-
-
-
-
-
-    
     function signToEnglish(sign) {
       const map = {
         Aries: 'Aries',
@@ -419,8 +411,6 @@ async function googleTimeZoneForBirth(lat, lon, year, month, day, hour, min) {
       return excel;
     }
 
-
-    
     function buildSheetNormalData(excel) {
       return {
         // Datos generales de la plantilla
@@ -513,137 +503,413 @@ async function googleTimeZoneForBirth(lat, lon, year, month, day, hour, min) {
       };
     }
 
-function buildSheetNormalRows(sheet) {
-  return [
-    [sheet.sun_sign, sheet.sun_degree, sheet.sun_house, sheet.sun_motion],
-    [sheet.moon_sign, sheet.moon_degree, sheet.moon_house, sheet.moon_motion],
-    [sheet.mercury_sign, sheet.mercury_degree, sheet.mercury_house, sheet.mercury_motion],
-    [sheet.venus_sign, sheet.venus_degree, sheet.venus_house, sheet.venus_motion],
-    [sheet.mars_sign, sheet.mars_degree, sheet.mars_house, sheet.mars_motion],
-    [sheet.jupiter_sign, sheet.jupiter_degree, sheet.jupiter_house, sheet.jupiter_motion],
-    [sheet.saturn_sign, sheet.saturn_degree, sheet.saturn_house, sheet.saturn_motion],
-    [sheet.uranus_sign, sheet.uranus_degree, sheet.uranus_house, sheet.uranus_motion],
-    [sheet.neptune_sign, sheet.neptune_degree, sheet.neptune_house, sheet.neptune_motion],
-    [sheet.pluto_sign, sheet.pluto_degree, sheet.pluto_house, sheet.pluto_motion]
-  ];
-}
-
-    function buildElementsData(planets) {
-  const signElements = {
-    Aries: 'fire',
-    Leo: 'fire',
-    Sagittarius: 'fire',
-
-    Taurus: 'earth',
-    Virgo: 'earth',
-    Capricorn: 'earth',
-
-    Gemini: 'air',
-    Libra: 'air',
-    Aquarius: 'air',
-
-    Cancer: 'water',
-    Scorpio: 'water',
-    Pisces: 'water'
-  };
-
-  const allowedBodies = [
-    'Sun',
-    'Moon',
-    'Mercury',
-    'Venus',
-    'Mars',
-    'Jupiter',
-    'Saturn',
-    'Uranus',
-    'Neptune',
-    'Pluto',
-    'Ascendant'
-  ];
-
-  const counts = {
-    fire: 0,
-    earth: 0,
-    air: 0,
-    water: 0
-  };
-
-  for (const planet of planets) {
-    if (!allowedBodies.includes(planet.name)) continue;
-
-    const sign = signToEnglish(planet.sign);
-    const element = signElements[sign];
-
-    if (element) {
-      counts[element] += 1;
+    function buildSheetNormalRows(sheet) {
+      return [
+        [sheet.sun_sign, sheet.sun_degree, sheet.sun_house, sheet.sun_motion],
+        [sheet.moon_sign, sheet.moon_degree, sheet.moon_house, sheet.moon_motion],
+        [sheet.mercury_sign, sheet.mercury_degree, sheet.mercury_house, sheet.mercury_motion],
+        [sheet.venus_sign, sheet.venus_degree, sheet.venus_house, sheet.venus_motion],
+        [sheet.mars_sign, sheet.mars_degree, sheet.mars_house, sheet.mars_motion],
+        [sheet.jupiter_sign, sheet.jupiter_degree, sheet.jupiter_house, sheet.jupiter_motion],
+        [sheet.saturn_sign, sheet.saturn_degree, sheet.saturn_house, sheet.saturn_motion],
+        [sheet.uranus_sign, sheet.uranus_degree, sheet.uranus_house, sheet.uranus_motion],
+        [sheet.neptune_sign, sheet.neptune_degree, sheet.neptune_house, sheet.neptune_motion],
+        [sheet.pluto_sign, sheet.pluto_degree, sheet.pluto_house, sheet.pluto_motion]
+      ];
     }
-  }
 
-  const total = counts.fire + counts.earth + counts.air + counts.water || 1;
+    function buildElementsData(planets, houseCusps) {
+      function normalizePlanetKey(name = '') {
+        const n = String(name)
+          .trim()
+          .toLowerCase()
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '');
 
-  const percentages = {
-    fire: Number(((counts.fire / total) * 100).toFixed(2)),
-    earth: Number(((counts.earth / total) * 100).toFixed(2)),
-    air: Number(((counts.air / total) * 100).toFixed(2)),
-    water: Number(((counts.water / total) * 100).toFixed(2))
-  };
+        const map = {
+          sol: 'sun',
+          sun: 'sun',
+          luna: 'moon',
+          moon: 'moon',
+          mercurio: 'mercury',
+          mercury: 'mercury',
+          venus: 'venus',
+          marte: 'mars',
+          mars: 'mars',
+          jupiter: 'jupiter',
+          saturno: 'saturn',
+          saturn: 'saturn',
+          urano: 'uranus',
+          uranus: 'uranus',
+          neptuno: 'neptune',
+          neptune: 'neptune',
+          pluton: 'pluto',
+          pluto: 'pluto',
+          ascendente: 'ascendant',
+          ascendant: 'ascendant'
+        };
 
-  const dominant = Object.entries(percentages)
-    .sort((a, b) => b[1] - a[1])[0][0];
+        return map[n] || n;
+      }
 
-return {
-  counts,
-  percentages,
-  dominant,
-  percentage_rows: [
-    [percentages.fire],
-    [percentages.earth],
-    [percentages.air],
-    [percentages.water]
-  ],
-  rows: [
-    ['Fire', counts.fire, percentages.fire],
-    ['Earth', counts.earth, percentages.earth],
-    ['Air', counts.air, percentages.air],
-    ['Water', counts.water, percentages.water]
-  ]
-};
-}
+      function normalizeSignKey(sign = '') {
+        const s = String(signToEnglish(sign))
+          .trim()
+          .toLowerCase();
 
-const excelData = buildExcelData(planetsData, houseCuspsData);
-const sheetNormalData = buildSheetNormalData(excelData);
-const sheetNormalRows = buildSheetNormalRows(sheetNormalData);
-const elementsData = buildElementsData(planetsData);
+        const map = {
+          aries: 'aries',
+          taurus: 'taurus',
+          gemini: 'gemini',
+          cancer: 'cancer',
+          leo: 'leo',
+          virgo: 'virgo',
+          libra: 'libra',
+          scorpio: 'scorpio',
+          sagittarius: 'sagittarius',
+          capricorn: 'capricorn',
+          aquarius: 'aquarius',
+          pisces: 'pisces'
+        };
 
-    
-return res.status(200).json({
-  ok: true,
-  input: {
-    nombre,
-    fecha_nacimiento,
-    hora_nacimiento: horaNormalizada,
-    lugar_nacimiento,
-    lugar_resuelto: location.formatted,
-    lat: location.lat,
-    lon: location.lon,
-    tzone: location.tzone,
-    timezoneId: location.timezoneId,
-    timezoneName: location.timezoneName,
-    city: location.city,
-    state: location.state,
-    country: location.country
-  },
-  excel: excelData,
-  sheet_normal: sheetNormalData,
-  sheet_normal_rows: sheetNormalRows,
-  elements: elementsData,
-  sent_payload: payload,
-  raw: {
-  planets: planetsData,
-  house_cusps: houseCuspsData
-}
-});
-    
+        return map[s] || s;
+      }
+
+      function signToElement(sign = '') {
+        const s = normalizeSignKey(sign);
+
+        if (['aries', 'leo', 'sagittarius'].includes(s)) return 'fire';
+        if (['taurus', 'virgo', 'capricorn'].includes(s)) return 'earth';
+        if (['gemini', 'libra', 'aquarius'].includes(s)) return 'air';
+        if (['cancer', 'scorpio', 'pisces'].includes(s)) return 'water';
+
+        return null;
+      }
+
+      function addPoints(bucket, element, value) {
+        if (!element || !Number.isFinite(value)) return;
+        bucket[element] += value;
+      }
+
+      function angularDistance(a, b) {
+        const d = Math.abs(Number(a) - Number(b)) % 360;
+        return d > 180 ? 360 - d : d;
+      }
+
+      function angleBonus(distance) {
+        if (distance <= 3) return 5;
+        if (distance <= 6) return 3;
+        if (distance <= 10) return 1;
+        return 0;
+      }
+
+      function signRuler(sign = '') {
+        const s = normalizeSignKey(sign);
+
+        // Método moderno, parecido al que muestra Astro-Seek cuando usa "Modern method".
+        const rulers = {
+          aries: 'mars',
+          taurus: 'venus',
+          gemini: 'mercury',
+          cancer: 'moon',
+          leo: 'sun',
+          virgo: 'mercury',
+          libra: 'venus',
+          scorpio: 'pluto',
+          sagittarius: 'jupiter',
+          capricorn: 'saturn',
+          aquarius: 'uranus',
+          pisces: 'neptune'
+        };
+
+        return rulers[s] || null;
+      }
+
+      const points = {
+        fire: 0,
+        earth: 0,
+        air: 0,
+        water: 0
+      };
+
+      const debug = {
+        luminariesAsc: {
+          fire: 0,
+          earth: 0,
+          air: 0,
+          water: 0
+        },
+        personal: {
+          fire: 0,
+          earth: 0,
+          air: 0,
+          water: 0
+        },
+        transpersonal: {
+          fire: 0,
+          earth: 0,
+          air: 0,
+          water: 0
+        },
+        dominantBonus: {
+          fire: 0,
+          earth: 0,
+          air: 0,
+          water: 0
+        },
+        dominantPlanetScores: []
+      };
+
+      const byName = {};
+
+      for (const planet of planets || []) {
+        const key = normalizePlanetKey(planet.name);
+        byName[key] = planet;
+      }
+
+      // 1) Sol / Luna / Ascendente: +3 cada uno.
+      function addToSection(sectionName, sign, value) {
+        const element = signToElement(sign);
+        addPoints(points, element, value);
+        addPoints(debug[sectionName], element, value);
+      }
+
+      if (byName.sun) {
+        addToSection('luminariesAsc', byName.sun.sign, 3);
+      }
+
+      if (byName.moon) {
+        addToSection('luminariesAsc', byName.moon.sign, 3);
+      }
+
+      let ascSign = '';
+      let ascDegree = null;
+      let mcSign = '';
+      let mcDegree = null;
+
+      if (houseCusps && Array.isArray(houseCusps.houses)) {
+        const h1 = houseCusps.houses.find(h => Number(h.house) === 1);
+        const h10 = houseCusps.houses.find(h => Number(h.house) === 10);
+
+        if (h1) {
+          ascSign = h1.sign;
+          ascDegree = Number(houseCusps.ascendant || h1.degree);
+          addToSection('luminariesAsc', h1.sign, 3);
+        }
+
+        if (h10) {
+          mcSign = h10.sign;
+          mcDegree = Number(houseCusps.midheaven || h10.degree);
+        }
+      } else if (byName.ascendant) {
+        ascSign = byName.ascendant.sign;
+        ascDegree = Number(byName.ascendant.fullDegree);
+        addToSection('luminariesAsc', byName.ascendant.sign, 3);
+      }
+
+      // 2) Personales / sociales según la tabla de Astro-Seek:
+      // Mercurio, Venus, Marte y Júpiter: +2 cada uno.
+      const personalBodies = ['mercury', 'venus', 'mars', 'jupiter'];
+      for (const key of personalBodies) {
+        if (byName[key]) {
+          addToSection('personal', byName[key].sign, 2);
+        }
+      }
+
+      // 3) Transpersonales / lentos:
+      // Saturno, Urano, Neptuno y Plutón: +1 cada uno.
+      const transpersonalBodies = ['saturn', 'uranus', 'neptune', 'pluto'];
+      for (const key of transpersonalBodies) {
+        if (byName[key]) {
+          addToSection('transpersonal', byName[key].sign, 1);
+        }
+      }
+
+      // 4) Bonus de dominancia aproximado.
+      // Esto intenta imitar la columna "Dom." de Astro-Seek.
+      // No es exacto porque en este endpoint no tenemos aspectos.
+      const dscDegree = Number.isFinite(ascDegree) ? (ascDegree + 180) % 360 : null;
+      const icDegree = Number.isFinite(mcDegree) ? (mcDegree + 180) % 360 : null;
+
+      const dominantCandidates = [
+        'sun',
+        'moon',
+        'mercury',
+        'venus',
+        'mars',
+        'jupiter',
+        'saturn',
+        'uranus',
+        'neptune',
+        'pluto'
+      ];
+
+      function rulerScoreForPlanet(planetKey) {
+        let score = 0;
+
+        function addIfRulerOf(sign, value) {
+          if (!sign) return;
+          const ruler = signRuler(sign);
+          if (ruler === planetKey) {
+            score += value;
+          }
+        }
+
+        addIfRulerOf(byName.sun?.sign, 2);
+        addIfRulerOf(byName.moon?.sign, 2);
+        addIfRulerOf(ascSign, 2);
+        addIfRulerOf(mcSign, 1);
+
+        return score;
+      }
+
+      const dominantScores = dominantCandidates
+        .map(key => {
+          const planet = byName[key];
+          if (!planet) return null;
+
+          let score = 0;
+
+          const signElement = signToElement(planet.sign);
+          const planetDegree = Number(planet.fullDegree);
+          const house = Number(planet.house);
+
+          // Importancia por casa, parecido a la lógica de planetas dominantes.
+          if (house === 1 || house === 10) score += 2;
+          else if (house === 4 || house === 7) score += 1.5;
+          else if ([2, 5, 8, 11].includes(house)) score += 1;
+
+          // Importancia por cercanía a ángulos.
+          const angleBonuses = [];
+
+          if (Number.isFinite(planetDegree) && Number.isFinite(ascDegree)) {
+            angleBonuses.push(angleBonus(angularDistance(planetDegree, ascDegree)));
+          }
+
+          if (Number.isFinite(planetDegree) && Number.isFinite(mcDegree)) {
+            angleBonuses.push(angleBonus(angularDistance(planetDegree, mcDegree)));
+          }
+
+          if (Number.isFinite(planetDegree) && Number.isFinite(dscDegree)) {
+            angleBonuses.push(angleBonus(angularDistance(planetDegree, dscDegree)));
+          }
+
+          if (Number.isFinite(planetDegree) && Number.isFinite(icDegree)) {
+            angleBonuses.push(angleBonus(angularDistance(planetDegree, icDegree)));
+          }
+
+          score += Math.max(...angleBonuses, 0);
+
+          // Importancia por regencias de Sol, Luna, ASC y MC.
+          score += rulerScoreForPlanet(key);
+
+          return {
+            key,
+            name: planet.name,
+            sign: signToEnglish(planet.sign),
+            element: signElement,
+            score: Number(score.toFixed(2))
+          };
+        })
+        .filter(Boolean)
+        .sort((a, b) => b.score - a.score);
+
+      debug.dominantPlanetScores = dominantScores;
+
+      /*
+        Tomamos los 3 planetas más dominantes estimados.
+        Cada uno suma +2 al elemento de su signo.
+        Esto imita la columna Dom. de Astro-Seek sin tocar el resto del sistema.
+      */
+      const topDominants = dominantScores
+        .filter(item => item.score > 0)
+        .slice(0, 3);
+
+      for (const item of topDominants) {
+        addPoints(points, item.element, 2);
+        addPoints(debug.dominantBonus, item.element, 2);
+      }
+
+      const total = points.fire + points.earth + points.air + points.water || 1;
+
+      const percentages = {
+        fire: Number(((points.fire / total) * 100).toFixed(2)),
+        earth: Number(((points.earth / total) * 100).toFixed(2)),
+        air: Number(((points.air / total) * 100).toFixed(2)),
+        water: Number(((points.water / total) * 100).toFixed(2))
+      };
+
+      const dominant = Object.entries(percentages)
+        .sort((a, b) => b[1] - a[1])[0][0];
+
+      const counts = {
+        fire: Number(points.fire.toFixed(2)),
+        earth: Number(points.earth.toFixed(2)),
+        air: Number(points.air.toFixed(2)),
+        water: Number(points.water.toFixed(2))
+      };
+
+      return {
+        // Mantengo "counts" para compatibilidad.
+        // Ahora no son conteos simples: son puntos ponderados.
+        counts,
+        rawPoints: counts,
+        totalPoints: Number(total.toFixed(2)),
+        percentages,
+        dominant,
+
+        // Esto sirve para revisar si se parece a Astro-Seek.
+        // Make puede ignorarlo.
+        debug,
+
+        percentage_rows: [
+          [percentages.fire],
+          [percentages.earth],
+          [percentages.air],
+          [percentages.water]
+        ],
+        rows: [
+          ['Fire', counts.fire, percentages.fire],
+          ['Earth', counts.earth, percentages.earth],
+          ['Air', counts.air, percentages.air],
+          ['Water', counts.water, percentages.water]
+        ]
+      };
+    }
+
+    const excelData = buildExcelData(planetsData, houseCuspsData);
+    const sheetNormalData = buildSheetNormalData(excelData);
+    const sheetNormalRows = buildSheetNormalRows(sheetNormalData);
+    const elementsData = buildElementsData(planetsData, houseCuspsData);
+
+    return res.status(200).json({
+      ok: true,
+      input: {
+        nombre,
+        fecha_nacimiento,
+        hora_nacimiento: horaNormalizada,
+        lugar_nacimiento,
+        lugar_resuelto: location.formatted,
+        lat: location.lat,
+        lon: location.lon,
+        tzone: location.tzone,
+        timezoneId: location.timezoneId,
+        timezoneName: location.timezoneName,
+        city: location.city,
+        state: location.state,
+        country: location.country
+      },
+      excel: excelData,
+      sheet_normal: sheetNormalData,
+      sheet_normal_rows: sheetNormalRows,
+      elements: elementsData,
+      sent_payload: payload,
+      raw: {
+        planets: planetsData,
+        house_cusps: houseCuspsData
+      }
+    });
+
   } catch (error) {
     return res.status(error.status || 500).json({
       ok: false,
