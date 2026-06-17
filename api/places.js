@@ -16,6 +16,7 @@ function setCors(res, origin) {
     res.setHeader("Access-Control-Allow-Origin", origin);
     res.setHeader("Vary", "Origin");
   }
+
   res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With");
 }
@@ -23,7 +24,16 @@ function setCors(res, origin) {
 function bad(res, status, msg, detail) {
   res.statusCode = status;
   res.setHeader("Content-Type", "application/json; charset=utf-8");
-  res.end(JSON.stringify({ error: msg, detail: detail || null }));
+  res.end(JSON.stringify({ error: msg, detail: detail || null, items: [] }));
+}
+
+function cleanLang(value) {
+  const raw = String(value || "es").toLowerCase();
+
+  if (raw.startsWith("en")) return "en";
+  if (raw.startsWith("es")) return "es";
+
+  return "es";
 }
 
 module.exports = async (req, res) => {
@@ -35,14 +45,21 @@ module.exports = async (req, res) => {
       res.statusCode = 204;
       return res.end();
     }
+
     if (req.method !== "GET") {
       return bad(res, 405, "Method Not Allowed. Use GET.");
     }
 
-    // parsear ?q=
     const { URL } = require("url");
     const url = new URL(req.url, "http://localhost");
+
     const q = (url.searchParams.get("q") || "").trim();
+
+    const lang = cleanLang(
+      url.searchParams.get("lang") ||
+      url.searchParams.get("language") ||
+      url.searchParams.get("locale")
+    );
 
     if (!q || q.length < 3) {
       return bad(res, 400, "Parámetro 'q' mínimo 3 caracteres");
@@ -52,23 +69,73 @@ module.exports = async (req, res) => {
     if (!key) return bad(res, 500, "Falta OPENCAGE_KEY");
 
     const ocURL =
-  "https://api.opencagedata.com/geocode/v1/json?q=" +
-  encodeURIComponent(q) +
-  `&key=${key}&limit=6&language=es&no_annotations=1`;
+      "https://api.opencagedata.com/geocode/v1/json?q=" +
+      encodeURIComponent(q) +
+      "&key=" +
+      encodeURIComponent(key) +
+      "&limit=8" +
+      "&language=" +
+      encodeURIComponent(lang) +
+      "&no_annotations=1";
 
     const r = await fetch(ocURL);
-    if (!r.ok) return bad(res, r.status, `OpenCage ${r.status}`);
+
+    if (!r.ok) {
+      return bad(res, r.status, `OpenCage ${r.status}`);
+    }
+
     const j = await r.json();
 
-    const items = (j.results || []).map((g) => ({
-      formatted: g.formatted,              // "Barcelona, España"
-      lat: g.geometry?.lat ?? null,
-      lon: g.geometry?.lng ?? null,
-      // opcionalmente expongo componentes principales para UI
-      city: g.components?.city || g.components?.town || g.components?.village || null,
-      state: g.components?.state || null,
-      country: g.components?.country || null,
-    }));
+    const seen = new Set();
+
+    const items = (j.results || [])
+      .map((g) => {
+        const c = g.components || {};
+
+        const city =
+          c.city ||
+          c.town ||
+          c.village ||
+          c.hamlet ||
+          c.municipality ||
+          c.county ||
+          "";
+
+        const state =
+          c.state ||
+          c.province ||
+          c.region ||
+          "";
+
+        const country = c.country || "";
+
+        const parts = [city, state, country]
+          .filter(Boolean)
+          .filter((part, index, arr) => arr.indexOf(part) === index);
+
+        const formatted = parts.length ? parts.join(", ") : g.formatted;
+
+        return {
+          formatted,
+          lat: g.geometry?.lat ?? null,
+          lon: g.geometry?.lng ?? null,
+          city: city || null,
+          state: state || null,
+          country: country || null,
+          lang,
+        };
+      })
+      .filter((item) => {
+        if (!item.formatted) return false;
+
+        const key = item.formatted.toLowerCase();
+
+        if (seen.has(key)) return false;
+
+        seen.add(key);
+        return true;
+      })
+      .slice(0, 6);
 
     res.statusCode = 200;
     res.setHeader("Content-Type", "application/json; charset=utf-8");
